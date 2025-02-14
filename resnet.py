@@ -54,7 +54,6 @@ def main(
     batch_size: int = 64,
     alpha: float = 1e-3,
     epochs: int = 10,
-    n_groups: int = 8,
 ):
     device = get_device()
 
@@ -77,7 +76,8 @@ def main(
 
     for i in range(2):
         set_random_seeds(seed)
-        model = models.efficientnet_b0(weights=None).to(device)
+        model = models.resnet18(weights=None).to(device)
+        print(model)
         if i == 0:
             replace_batch_norm_layers(model, CorrelatedGroupNorm)
         model = model.to(device)
