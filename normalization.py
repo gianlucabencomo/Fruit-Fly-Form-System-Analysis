@@ -240,7 +240,7 @@ class LayerNorm2d(nn.Module):
 class GroupNorm(nn.Module):
     def __init__(self, num_groups, num_features, eps=1e-05, affine=True):
         super().__init__()
-        assert num_features % num_groups == 0, "Number of groups must be divisble by number of features."
+        assert num_features % num_groups == 0, "Number of features must be divisible by the number of groups."
         self.num_groups = num_groups
         self.num_features = num_features
         self.eps = eps
