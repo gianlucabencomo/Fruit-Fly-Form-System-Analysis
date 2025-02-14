@@ -44,3 +44,11 @@ def get_norm_layer(norm: str, n_groups: int, use_local: bool = True):
         raise NotImplementedError
     
     return norm_layer
+
+def replace_batch_norm_layers(model, custom_norm_fn):
+    for name, module in model.named_children():
+        if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.SyncBatchNorm):
+            num_channels = module.num_features
+            setattr(model, name, custom_norm_fn(num_channels)) 
+        else:
+            replace_batch_norm_layers(module, custom_norm_fn)
