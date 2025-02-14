@@ -79,7 +79,7 @@ def main(
         set_random_seeds(seed)
         model = models.efficientnet_b0(weights=None).to(device)
         if i == 0:
-            replace_batch_norm_layers(model, partial(CorrelatedGroupNorm, n_groups))
+            replace_batch_norm_layers(model, CorrelatedGroupNorm)
         model = model.to(device)
         optimizer = optim.AdamW(model.parameters(), lr=alpha)
         criterion = nn.CrossEntropyLoss()
