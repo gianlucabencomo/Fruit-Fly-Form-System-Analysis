@@ -12,6 +12,7 @@ from torchvision import datasets
 
 from transforms import image_transforms
 from utils import *
+from normalization import *
 
 def train(dataloader, model, criterion, optimizer, epochs, device):
     model.train()
@@ -77,7 +78,6 @@ def main(
     for i in range(2):
         set_random_seeds(seed)
         model = models.resnet18(weights=None).to(device)
-        print(model)
         if i == 0:
             replace_batch_norm_layers(model, CorrelatedGroupNorm)
         model = model.to(device)
@@ -95,12 +95,3 @@ def main(
 
 if __name__ == "__main__":
     typer.run(main)
-
-# Load EfficientNet-B0
-model = models.efficientnet_b0(pretrained=False)  # Set to False for fresh initialization
-
-# Replace normalization layers with CustomNorm
-replace_batch_norm_layers(model, partial(CorrelatedGroupNorm, n_groups))
-
-# Print the modified model to verify replacements
-print(model)

@@ -4,7 +4,7 @@ import numpy as np
 import random
 from functools import partial
 
-from normalization import BatchNorm2d, LayerNorm2d, GroupNorm, InstanceNorm2d, CorrelatedGroupNorm, DeCorrelatedGroupNorm, NegativeCorrelatedGroupNorm, PositiveCorrelatedGroupNorm
+from normalization import BatchNorm2d, LayerNorm2d, GroupNorm, InstanceNorm2d, CorrelatedGroupNorm, DeCorrelatedGroupNorm, NegativeCorrelatedGroupNorm, PositiveCorrelatedGroupNorm, AdaptiveGroupNorm
 
 
 def get_device():
@@ -23,7 +23,7 @@ def set_random_seeds(seed: int = 0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_norm_layer(norm: str, n_groups: int, use_local: bool = True):
+def get_norm_layer(norm: str, n_groups: int, use_local: bool = True, threshold: float = 0.5):
     if norm == "instance_norm":
         norm_layer = InstanceNorm2d if use_local else nn.InstanceNorm2d
     elif norm == "batch_norm":
@@ -40,6 +40,8 @@ def get_norm_layer(norm: str, n_groups: int, use_local: bool = True):
          norm_layer = partial(PositiveCorrelatedGroupNorm, n_groups)
     elif norm == "neg_correlated_group":
          norm_layer = partial(NegativeCorrelatedGroupNorm, n_groups)
+    elif norm == "adaptive_norm":
+        norm_layer = partial(AdaptiveGroupNorm, n_groups)
     else:
         raise NotImplementedError
     
@@ -49,7 +51,10 @@ def replace_batch_norm_layers(model, custom_norm_fn):
     for name, module in model.named_children():
         if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.SyncBatchNorm):
             num_channels = module.num_features
-            n_groups = num_channels // 8
-            setattr(model, name, custom_norm_fn(n_groups, num_channels)) 
+            if custom_norm_fn in [GroupNorm, CorrelatedGroupNorm, DeCorrelatedGroupNorm, PositiveCorrelatedGroupNorm, NegativeCorrelatedGroupNorm]:
+                n_groups = num_channels // 4
+                setattr(model, name, custom_norm_fn(n_groups, num_channels)) 
+            else:
+                setattr(model, name, custom_norm_fn(num_channels))
         else:
             replace_batch_norm_layers(module, custom_norm_fn)

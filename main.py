@@ -15,6 +15,9 @@ from utils import *
 import matplotlib.pyplot as plt
 from models import CNN
 
+import torch
+import matplotlib.pyplot as plt
+
 WIDTHS = {
     1 : [32],
     2 : [32, 64],
@@ -108,7 +111,8 @@ def main(
     batch_size: int = 64,
     alpha: float = 1e-3,
     epochs: int = 10,
-    n_groups: int = 16,
+    n_groups: int = 4,
+    threshold: float = 0.5, 
 ):
     device = get_device()
 
@@ -130,11 +134,12 @@ def main(
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     norms = [
+        "adaptive_norm",
         "group_norm",
-        "correlated_group",
-        "de_correlated_group",
-        "pos_correlated_group",
-        "neg_correlated_group",
+        # "correlated_group",
+        # "de_correlated_group",
+        # "pos_correlated_group",
+        # "neg_correlated_group",
     ]
 
     all_train_losses = {norm: [] for norm in norms}
@@ -150,7 +155,7 @@ def main(
         for norm in norms:
             set_random_seeds(seed)
             print(f"Running {norm} with seed {seed}...")
-            norm_layer = get_norm_layer(norm, n_groups)
+            norm_layer = get_norm_layer(norm, n_groups, threshold)
             model = CNN(num_layers=n_layers, width=WIDTHS[n_layers], norm_layer=norm_layer).to(device)
             optimizer = optim.AdamW(model.parameters(), lr=alpha)
             criterion = nn.CrossEntropyLoss()
