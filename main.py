@@ -19,10 +19,10 @@ import torch
 import matplotlib.pyplot as plt
 
 WIDTHS = {
-    1 : [32],
-    2 : [32, 64],
-    3 : [32, 64, 128],
-    4 : [32, 64, 128, 256],
+    1: [32],
+    2: [32, 64],
+    3: [32, 64, 128],
+    4: [32, 64, 128, 256],
 }
 
 
@@ -112,7 +112,7 @@ def main(
     alpha: float = 1e-3,
     epochs: int = 10,
     n_groups: int = 4,
-    threshold: float = 0.5, 
+    threshold: float = 0.5,
 ):
     device = get_device()
 
@@ -134,12 +134,11 @@ def main(
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     norms = [
+        "batch_norm",
         "adaptive_norm",
         "group_norm",
-        # "correlated_group",
-        # "de_correlated_group",
-        # "pos_correlated_group",
-        # "neg_correlated_group",
+        "instance_norm",
+        "layer_norm",
     ]
 
     all_train_losses = {norm: [] for norm in norms}
@@ -156,7 +155,9 @@ def main(
             set_random_seeds(seed)
             print(f"Running {norm} with seed {seed}...")
             norm_layer = get_norm_layer(norm, n_groups, threshold)
-            model = CNN(num_layers=n_layers, width=WIDTHS[n_layers], norm_layer=norm_layer).to(device)
+            model = CNN(
+                num_layers=n_layers, width=WIDTHS[n_layers], norm_layer=norm_layer
+            ).to(device)
             optimizer = optim.AdamW(model.parameters(), lr=alpha)
             criterion = nn.CrossEntropyLoss()
 
@@ -181,7 +182,13 @@ def main(
             f"{norm}: Avg Test Accuracy = {avg_acc:.4f}, Avg Test Loss = {avg_loss:.4f}"
         )
 
-    plot_training_losses(norms, seeds, all_train_losses, epochs, save_path=f"./{epochs}_{n_layers}_{n_groups}.png")
+    plot_training_losses(
+        norms,
+        seeds,
+        all_train_losses,
+        epochs,
+        save_path=f"./{epochs}_{n_layers}_{n_groups}.png",
+    )
 
 
 if __name__ == "__main__":

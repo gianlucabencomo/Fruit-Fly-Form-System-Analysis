@@ -8,209 +8,47 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class DeCorrelatedGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, threshold = 0.5, eps=1e-05, momentum: float = 0.1, affine=True):
+
+class AdaptiveGroupNorm(nn.Module):
+    def __init__(self, num_groups, num_features, eps=1e-05):
         super().__init__()
-        assert num_features % num_groups == 0, "Number of groups must be divisble by number of features."
+        assert (
+            num_features % num_groups == 0
+        ), "Number of features must be divisible by the number of groups."
         self.num_groups = num_groups
         self.num_features = num_features
         self.eps = eps
-        self.momentum = momentum
-        self.affine = affine
-        self.threshold = threshold
+        self.k = num_features // num_groups
 
-        self.register_buffer("cos_sim_mean", torch.zeros(num_features, num_features))
+        self.Q = nn.Parameter(torch.empty(num_features, num_groups))
+        nn.init.xavier_uniform_(self.Q)
 
-        if self.affine:
-            self.gamma = nn.Parameter(torch.ones(num_features))
-            self.beta = nn.Parameter(torch.zeros(num_features))
-        else:
-            self.gamma = None
-            self.beta = None
+        self.V = nn.Parameter(torch.empty(num_groups, num_features))
+        nn.init.xavier_uniform_(self.V)
 
     def forward(self, x):
         B, C, H, W = x.shape
-        if self.training:
-            x_flat = x.view(B, C, -1)
-            x_norm = F.normalize(x_flat, p=2, dim=2)
-            cos_sim = torch.bmm(x_norm, x_norm.transpose(1, 2))
-            cos_sim_mean = cos_sim.mean(dim=0)
-        else:
-            cos_sim_mean = self.cos_sim_mean
-        values, top_inds = torch.topk(torch.abs(cos_sim_mean), k=self.num_features // self.num_groups, dim=1, largest=False)
 
-        means, vars = [], []
-        for c in range(C):
-            inds = top_inds[c][values[c] < (1 - self.threshold)]
-            means.append(x[:, inds, :, :].mean(dim=(1, 2, 3), keepdim=True))
-            vars.append(x[:, inds, :, :].var(dim=(1, 2, 3), unbiased=False, keepdim=True))
-        mean = torch.stack(means, dim=1).squeeze(2)
-        var = torch.stack(vars, dim=1).squeeze(2)
+        # projection matricies
+        A = F.softmax(self.Q, dim=0)
+        V = F.softmax(self.V, dim=1)
+        M = torch.matmul(A, V)
 
+        x_view = x.permute(0, 2, 3, 1).contiguous()
+
+        # compute first and second moments
+        x_1 = torch.matmul(x_view, M)
+        x_2 = torch.matmul(x_view**2, M)
+
+        # global average
+        mean = x_1.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
+        x_2 = x_2.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
+        var = torch.clamp(x_2 - mean**2, min=self.eps)
+
+        # normalize
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
-
-        x_hat = x_hat.view(B, C, H, W)
-
-        # update buffer
-        if self.training:
-            self.cos_sim_mean.data.mul_(1 - self.momentum).add_(self.momentum * cos_sim_mean)
-
-        if self.affine:
-            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
         return x_hat
 
-class NegativeCorrelatedGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, threshold = 0.5, eps=1e-05, momentum: float = 0.1, affine=True):
-        super().__init__()
-        assert num_features % num_groups == 0, "Number of groups must be divisble by number of features."
-        self.num_groups = num_groups
-        self.num_features = num_features
-        self.eps = eps
-        self.momentum = momentum
-        self.affine = affine
-        self.threshold = threshold
-
-        self.register_buffer("cos_sim_mean", torch.zeros(num_features, num_features))
-
-        if self.affine:
-            self.gamma = nn.Parameter(torch.ones(num_features))
-            self.beta = nn.Parameter(torch.zeros(num_features))
-        else:
-            self.gamma = None
-            self.beta = None
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        if self.training:
-            x_flat = x.view(B, C, -1)
-            x_norm = F.normalize(x_flat, p=2, dim=2)
-            cos_sim = torch.bmm(x_norm, x_norm.transpose(1, 2))
-            cos_sim_mean = cos_sim.mean(dim=0)
-        else:
-            cos_sim_mean = self.cos_sim_mean
-        values, top_inds = torch.topk(cos_sim_mean, k=self.num_features // self.num_groups, dim=1, largest=False)
-
-        means, vars = [], []
-        for c in range(C):
-            inds = top_inds[c][values[c] < -self.threshold]
-            means.append(x[:, inds, :, :].mean(dim=(1, 2, 3), keepdim=True))
-            vars.append(x[:, inds, :, :].var(dim=(1, 2, 3), unbiased=False, keepdim=True))
-        mean = torch.stack(means, dim=1).squeeze(2)
-        var = torch.stack(vars, dim=1).squeeze(2)
-
-        x_hat = (x - mean) / torch.sqrt(var + self.eps)
-
-        x_hat = x_hat.view(B, C, H, W)
-
-        # update buffer
-        if self.training:
-            self.cos_sim_mean.data.mul_(1 - self.momentum).add_(self.momentum * cos_sim_mean)
-
-        if self.affine:
-            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
-        return x_hat
-
-class PositiveCorrelatedGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, threshold = 0.5, eps=1e-05, momentum: float = 0.1, affine=True):
-        super().__init__()
-        assert num_features % num_groups == 0, "Number of groups must be divisble by number of features."
-        self.num_groups = num_groups
-        self.num_features = num_features
-        self.eps = eps
-        self.momentum = momentum
-        self.affine = affine
-        self.threshold = threshold
-
-        self.register_buffer("cos_sim_mean", torch.zeros(num_features, num_features))
-
-        if self.affine:
-            self.gamma = nn.Parameter(torch.ones(num_features))
-            self.beta = nn.Parameter(torch.zeros(num_features))
-        else:
-            self.gamma = None
-            self.beta = None
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        if self.training:
-            x_flat = x.view(B, C, -1)
-            x_norm = F.normalize(x_flat, p=2, dim=2)
-            cos_sim = torch.bmm(x_norm, x_norm.transpose(1, 2))
-            cos_sim_mean = cos_sim.mean(dim=0)
-        else:
-            cos_sim_mean = self.cos_sim_mean
-        values, top_inds = torch.topk(cos_sim_mean, k=self.num_features // self.num_groups, dim=1)
-
-        means, vars = [], []
-        for c in range(C):
-            inds = top_inds[c][values[c] > self.threshold]
-            means.append(x[:, inds, :, :].mean(dim=(1, 2, 3), keepdim=True))
-            vars.append(x[:, inds, :, :].var(dim=(1, 2, 3), unbiased=False, keepdim=True))
-        mean = torch.stack(means, dim=1).squeeze(2)
-        var = torch.stack(vars, dim=1).squeeze(2)
-
-        x_hat = (x - mean) / torch.sqrt(var + self.eps)
-
-        x_hat = x_hat.view(B, C, H, W)
-
-        # update buffer
-        if self.training:
-            self.cos_sim_mean.data.mul_(1 - self.momentum).add_(self.momentum * cos_sim_mean)
-
-        if self.affine:
-            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
-        return x_hat
-
-class CorrelatedGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, eps=1e-05, threshold = 0.5, momentum: float = 0.1, affine=True):
-        super().__init__()
-        assert num_features % num_groups == 0, "Number of groups must be divisble by number of features."
-        self.num_groups = num_groups
-        self.num_features = num_features
-        self.eps = eps
-        self.momentum = momentum
-        self.affine = affine
-        self.threshold = threshold
-
-        self.register_buffer("cos_sim_mean", torch.zeros(num_features, num_features))
-
-        if self.affine:
-            self.gamma = nn.Parameter(torch.ones(num_features))
-            self.beta = nn.Parameter(torch.zeros(num_features))
-        else:
-            self.gamma = None
-            self.beta = None
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        if self.training:
-            x_flat = x.view(B, C, -1)
-            x_norm = F.normalize(x_flat, p=2, dim=2)
-            cos_sim = torch.bmm(x_norm, x_norm.transpose(1, 2))
-            cos_sim_mean = cos_sim.mean(dim=0)
-        else:
-            cos_sim_mean = self.cos_sim_mean
-        values, top_inds = torch.topk(torch.abs(cos_sim_mean), k=self.num_features // self.num_groups, dim=1)
-
-        means, vars = [], []
-        for c in range(C):
-            inds = top_inds[c][values[c] > self.threshold]
-            means.append(x[:, inds, :, :].mean(dim=(1, 2, 3), keepdim=True))
-            vars.append(x[:, inds, :, :].var(dim=(1, 2, 3), unbiased=False, keepdim=True))
-        mean = torch.stack(means, dim=1).squeeze(2)
-        var = torch.stack(vars, dim=1).squeeze(2)
-
-        x_hat = (x - mean) / torch.sqrt(var + self.eps)
-
-        x_hat = x_hat.view(B, C, H, W)
-
-        # update buffer
-        if self.training:
-            self.cos_sim_mean.data.mul_(1 - self.momentum).add_(self.momentum * cos_sim_mean)
-
-        if self.affine:
-            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
-        return x_hat
 
 class LayerNorm2d(nn.Module):
     def __init__(self, num_features, eps=1e-05, affine=True):
@@ -237,51 +75,12 @@ class LayerNorm2d(nn.Module):
         return x_hat
 
 
-class AdaptiveGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, eps=1e-05):
-        super().__init__()
-        assert num_features % num_groups == 0, "Number of features must be divisible by the number of groups."
-        self.num_groups = num_groups
-        self.num_features = num_features
-        self.eps = eps
-        self.k = num_features // num_groups
-        
-        self.Q = nn.Parameter(torch.full((num_features, num_features), 1e-2))
-        for g in range(num_groups):
-            start = g * self.k
-            end = (g + 1) * self.k
-            self.Q.data[start:end, start:end] = 1e2
-        nn.init.xavier_uniform_(self.Q)
-        self.V = [torch.zeros((num_features,)) for _ in range(num_groups)]
-        for i in range(len(self.V)):
-            self.V[i][i * self.k:(i+1) * self.k] = 1 / self.k
-        self.V = nn.Parameter(torch.stack(self.V, dim=1))
-        #nn.init.xavier_uniform_(self.V)
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        # split into groups arbitrarily
-        x_group = x.view(B, self.num_groups, self.k, H, W) # B, G, C // G, H, W
-
-        A = F.softmax(self.Q, dim=-1)
-        x_view = x.permute(0, 2, 3, 1).contiguous()
-        x_attn = torch.matmul(x_view, A)
-        x_1 = torch.matmul(x_attn, self.V) # first moment
-        x_attn = torch.matmul(x_view ** 2, A)
-        x_2 = torch.matmul(x_attn, self.V) # second moment 
-        mean = x_1.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous().unsqueeze(4) # average global
-        x_2 = x_2.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous().unsqueeze(4) # average global
-        var = (x_2 - mean ** 2)
-
-        x_hat = (x_group - mean) / torch.sqrt(var + self.eps)
-        x_hat = x_hat.view(B, C, H, W)
-
-        return x_hat
-
 class GroupNorm(nn.Module):
     def __init__(self, num_groups, num_features, eps=1e-05, affine=True):
         super().__init__()
-        assert num_features % num_groups == 0, "Number of features must be divisible by the number of groups."
+        assert (
+            num_features % num_groups == 0
+        ), "Number of features must be divisible by the number of groups."
         self.num_groups = num_groups
         self.num_features = num_features
         self.eps = eps
@@ -296,7 +95,9 @@ class GroupNorm(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x_groups = x.view(B, self.num_groups, C // self.num_groups, H, W) # B, G, C // G, H, W
+        x_groups = x.view(
+            B, self.num_groups, C // self.num_groups, H, W
+        )  # B, G, C // G, H, W
         mean = x_groups.mean(dim=(2, 3, 4), keepdim=True)
         var = x_groups.var(dim=(2, 3, 4), unbiased=False, keepdim=True)
         x_hat = (x_groups - mean) / torch.sqrt(var + self.eps)
@@ -306,6 +107,7 @@ class GroupNorm(nn.Module):
         if self.affine:
             x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
         return x_hat
+
 
 class InstanceNorm2d(nn.Module):
     def __init__(self, num_features, eps=1e-05, affine=True):
@@ -330,6 +132,7 @@ class InstanceNorm2d(nn.Module):
             x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
 
         return x_hat
+
 
 class BatchNorm2d(nn.Module):
     def __init__(self, num_features, eps=1e-05, momentum=0.1, affine=True):
@@ -356,8 +159,12 @@ class BatchNorm2d(nn.Module):
 
             x_hat = (x - mean) / torch.sqrt(var + self.eps)
 
-            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean.squeeze()
-            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.squeeze()
+            self.running_mean = (
+                1 - self.momentum
+            ) * self.running_mean + self.momentum * mean.squeeze()
+            self.running_var = (
+                1 - self.momentum
+            ) * self.running_var + self.momentum * var.squeeze()
         else:
             mean = self.running_mean.view(1, -1, 1, 1)
             var = self.running_var.view(1, -1, 1, 1)
@@ -368,13 +175,27 @@ class BatchNorm2d(nn.Module):
 
         return x_hat
 
+
 class LocalBatchNorm2d(nn.Module):
-    def __init__(self, height, width, n_channels, kernel_size: int = 3, stride: int = 1, eps: float = 1e-5, affine=True):
+    def __init__(
+        self,
+        height,
+        width,
+        n_channels,
+        kernel_size: int = 3,
+        stride: int = 1,
+        eps: float = 1e-5,
+        affine=True,
+    ):
         super().__init__()
         self.height = height
         self.width = width
         self.n_channels = n_channels
-        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size)
+        self.kernel_size = (
+            kernel_size
+            if isinstance(kernel_size, tuple)
+            else (kernel_size, kernel_size)
+        )
         self.stride = stride
         self.padding = kernel_size // 2
         self.eps = eps
@@ -394,18 +215,43 @@ class LocalBatchNorm2d(nn.Module):
     def forward(self, x):
         # B, C, H, W
         if self.training:
-            x_pad = F.pad(x, (self.padding, self.padding, self.padding, self.padding), mode='constant', value=0)
-            patches = F.unfold(x_pad, kernel_size=self.kernel_size, dilation=1, padding=self.padding, stride=self.stride)
+            x_pad = F.pad(
+                x,
+                (self.padding, self.padding, self.padding, self.padding),
+                mode="constant",
+                value=0,
+            )
+            patches = F.unfold(
+                x_pad,
+                kernel_size=self.kernel_size,
+                dilation=1,
+                padding=self.padding,
+                stride=self.stride,
+            )
             B, _, L = patches.shape
-            H, W, P =  self.height + 2 * self.padding, self.width + 2 * self.padding, self.padding
-            patches = patches.view(B, self.n_channels, self.kernel_size[0] * self.kernel_size[1], L)
-            mean = patches.mean(dim=(0, 2), keepdim=True).view(1, self.n_channels, H, W)[:, :, P:-P, P:-P]
-            var = patches.var(dim=(0, 2), unbiased=False, keepdim=True).view(1, self.n_channels, H, W)[:, :, P:-P, P:-P]
+            H, W, P = (
+                self.height + 2 * self.padding,
+                self.width + 2 * self.padding,
+                self.padding,
+            )
+            patches = patches.view(
+                B, self.n_channels, self.kernel_size[0] * self.kernel_size[1], L
+            )
+            mean = patches.mean(dim=(0, 2), keepdim=True).view(
+                1, self.n_channels, H, W
+            )[:, :, P:-P, P:-P]
+            var = patches.var(dim=(0, 2), unbiased=False, keepdim=True).view(
+                1, self.n_channels, H, W
+            )[:, :, P:-P, P:-P]
 
             x_hat = (x - mean) / torch.sqrt(var + self.eps)
 
-            self.running_mean = (1 - self.momentum) * self.running_mean + self.momentum * mean.squeeze()
-            self.running_var = (1 - self.momentum) * self.running_var + self.momentum * var.squeeze()
+            self.running_mean = (
+                1 - self.momentum
+            ) * self.running_mean + self.momentum * mean.squeeze()
+            self.running_var = (
+                1 - self.momentum
+            ) * self.running_var + self.momentum * var.squeeze()
         else:
             mean = self.running_mean.unsqueeze(0)
             var = self.running_var.unsqueeze(0)
@@ -415,12 +261,15 @@ class LocalBatchNorm2d(nn.Module):
             x_hat = self.gamma.unsqueeze(0) * x_hat + self.beta.unsqueeze(0)
 
         return x_hat
-    
+
+
 def test_batch_norm(n_samples: int = 100, tol: float = 1e-5):
     res = []
     for _ in range(n_samples):
         B, C, H, W = torch.randint(low=1, high=64, size=(4,))
-        torch_batch_norm = nn.BatchNorm2d(num_features=C, eps=1e-05, momentum=0.1, affine=True)
+        torch_batch_norm = nn.BatchNorm2d(
+            num_features=C, eps=1e-05, momentum=0.1, affine=True
+        )
         custom_batch_norm = BatchNorm2d(num_features=C)
         x = torch.randn(B, C, H, W)
         torch_bn_output = torch_batch_norm(x)
@@ -428,17 +277,21 @@ def test_batch_norm(n_samples: int = 100, tol: float = 1e-5):
         res.append(torch.allclose(torch_bn_output, custom_bn_output, atol=tol))
     print(f"Batch Norm Passed = {sum(res) ==  len(res)} ({sum(res)} / {len(res)})")
 
+
 def test_instance_norm(n_samples: int = 100, tol: float = 1e-5):
     res = []
     for _ in range(n_samples):
         B, C, H, W = torch.randint(low=1, high=64, size=(4,))
-        torch_instance_norm = nn.InstanceNorm2d(num_features=C, eps=1e-05, momentum=0.1, affine=True)
+        torch_instance_norm = nn.InstanceNorm2d(
+            num_features=C, eps=1e-05, momentum=0.1, affine=True
+        )
         custom_instance_norm = InstanceNorm2d(num_features=C)
         x = torch.randn(B, C, H, W)
         torch_in_output = torch_instance_norm(x)
         custom_in_output = custom_instance_norm(x)
         res.append(torch.allclose(torch_in_output, custom_in_output, atol=tol))
     print(f"Instance Norm Passed = {sum(res) ==  len(res)} ({sum(res)} / {len(res)})")
+
 
 def test_group_norm(n_samples: int = 100, tol: float = 1e-5):
     res = []
@@ -454,6 +307,7 @@ def test_group_norm(n_samples: int = 100, tol: float = 1e-5):
         res.append(torch.allclose(torch_gn_output, custom_gn_output, atol=tol))
     print(f"Group Norm Passed = {sum(res) ==  len(res)} ({sum(res)} / {len(res)})")
 
+
 def test_dynamic_group_norm(n_samples: int = 100, tol: float = 1e-5):
     res = []
     for _ in range(n_samples):
@@ -466,7 +320,9 @@ def test_dynamic_group_norm(n_samples: int = 100, tol: float = 1e-5):
         torch_gn_output = torch_group_norm(x)
         custom_gn_output = custom_group_norm(x)
         res.append(torch.allclose(torch_gn_output, custom_gn_output, atol=tol))
-    print(f"Dynamic Group Norm Passed = {sum(res) ==  len(res)} ({sum(res)} / {len(res)})")
+    print(
+        f"Dynamic Group Norm Passed = {sum(res) ==  len(res)} ({sum(res)} / {len(res)})"
+    )
 
 
 def test_layer_norm(n_samples: int = 100, tol: float = 1e-5):
@@ -484,7 +340,14 @@ def test_layer_norm(n_samples: int = 100, tol: float = 1e-5):
 
     print(f"LayerNorm Passed = {sum(res) == len(res)} ({sum(res)} / {len(res)})")
 
-def unit_tests(channels: int = 3, height: int = 5, width: int = 5, kernel_size: int = 3, stride: int = 1):
+
+def unit_tests(
+    channels: int = 3,
+    height: int = 5,
+    width: int = 5,
+    kernel_size: int = 3,
+    stride: int = 1,
+):
     # test_batch_norm()
     # test_instance_norm()
     # test_group_norm()
@@ -492,9 +355,14 @@ def unit_tests(channels: int = 3, height: int = 5, width: int = 5, kernel_size: 
     test_dynamic_group_norm()
     exit()
 
-    local_norm = LocalBatchNorm2d(height=height, width=width, n_channels=channels,
-                            kernel_size=kernel_size, stride=stride)
-    
+    local_norm = LocalBatchNorm2d(
+        height=height,
+        width=width,
+        n_channels=channels,
+        kernel_size=kernel_size,
+        stride=stride,
+    )
+
     output = local_norm(x)
     print("Input shape: ", x.shape)
     print("Output shape: ", output.shape)

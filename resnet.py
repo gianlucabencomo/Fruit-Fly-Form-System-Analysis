@@ -14,6 +14,7 @@ from transforms import image_transforms
 from utils import *
 from normalization import *
 
+
 def train(dataloader, model, criterion, optimizer, epochs, device):
     model.train()
     print("Starting Training...")
@@ -79,18 +80,14 @@ def main(
         set_random_seeds(seed)
         model = models.resnet18(weights=None).to(device)
         if i == 0:
-            replace_batch_norm_layers(model, CorrelatedGroupNorm)
+            replace_batch_norm_layers(model, AdaptiveGroupNorm)
         model = model.to(device)
         optimizer = optim.AdamW(model.parameters(), lr=alpha)
         criterion = nn.CrossEntropyLoss()
-        _ = train(
-            train_loader, model, criterion, optimizer, epochs, device
-        )
+        _ = train(train_loader, model, criterion, optimizer, epochs, device)
         acc, test_loss = test(test_loader, model, criterion, device)
 
-        print(
-            f"\n{i} → Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n"
-        )
+        print(f"\n{i} → Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n")
 
 
 if __name__ == "__main__":
