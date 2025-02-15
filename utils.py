@@ -4,14 +4,6 @@ import numpy as np
 import random
 from functools import partial
 
-from normalization import (
-    BatchNorm2d,
-    LayerNorm2d,
-    GroupNorm,
-    InstanceNorm2d,
-    AdaptiveGroupNorm,
-)
-
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -34,20 +26,31 @@ def set_random_seeds(seed: int = 0):
 def get_norm_layer(
     norm: str, n_groups: int, use_local: bool = True, threshold: float = 0.5
 ):
-    if norm == "instance_norm":
+    # import inside function to avoid circular import error
+    from normalization import (
+        BatchNorm2d,
+        LayerNorm2d,
+        GroupNorm,
+        InstanceNorm2d,
+        AdaptiveGroupNorm,
+        LocalContextNorm
+    )
+    if norm == "in":
         norm_layer = InstanceNorm2d if use_local else nn.InstanceNorm2d
-    elif norm == "batch_norm":
+    elif norm == "bn":
         norm_layer = BatchNorm2d if use_local else nn.BatchNorm2d
-    elif norm == "group_norm":
+    elif norm == "gn":
         norm_layer = (
             partial(GroupNorm, n_groups)
             if use_local
             else partial(nn.GroupNorm, n_groups)
         )
-    elif norm == "layer_norm":
+    elif norm == "ln":
         norm_layer = LayerNorm2d
-    elif norm == "adaptive_norm":
+    elif norm == "agn":
         norm_layer = partial(AdaptiveGroupNorm, n_groups)
+    elif norm == "lcn":
+        norm_layer = LocalContextNorm
     else:
         raise NotImplementedError
 
@@ -55,6 +58,15 @@ def get_norm_layer(
 
 
 def replace_batch_norm_layers(model, custom_norm_fn):
+    # import inside function to avoid circular import error
+    from normalization import (
+        BatchNorm2d,
+        LayerNorm2d,
+        GroupNorm,
+        InstanceNorm2d,
+        AdaptiveGroupNorm,
+        LocalContextNorm
+    )
     for name, module in model.named_children():
         if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.SyncBatchNorm):
             num_channels = module.num_features

@@ -31,11 +31,10 @@ def plot_training_losses(
 ):
     plt.figure(figsize=(10, 5))
 
-    # Define unique colors for each normalization method
-    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple"]
+    colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:brown"]
+    linestyles = ["-", "--", "-.", ":", (0, (3, 5, 1, 5)), (0, (5, 1))]
+    
 
-    # Define different line styles for different seeds
-    linestyles = ["-", "--", "-.", ":", (0, (3, 5, 1, 5))]
 
     for norm_idx, norm in enumerate(norms):
         color = colors[norm_idx % len(colors)]  # Assign a color to each norm
@@ -133,13 +132,7 @@ def main(
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    norms = [
-        "batch_norm",
-        "adaptive_norm",
-        "group_norm",
-        "instance_norm",
-        "layer_norm",
-    ]
+    norms = ["lcn", "bn", "agn", "gn", "in", "ln"]
 
     all_train_losses = {norm: [] for norm in norms}
     all_accs = {norm: [] for norm in norms}
