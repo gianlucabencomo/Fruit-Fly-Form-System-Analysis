@@ -33,6 +33,7 @@ def get_norm_layer(
         GroupNorm,
         InstanceNorm2d,
         AdaptiveGroupNorm,
+        AdaptiveGroupNorm2,
         LocalContextNorm
     )
     if norm == "in":
@@ -49,8 +50,12 @@ def get_norm_layer(
         norm_layer = LayerNorm2d
     elif norm == "agn":
         norm_layer = partial(AdaptiveGroupNorm, n_groups)
+    elif norm == "agn2":
+        norm_layer = partial(AdaptiveGroupNorm2, n_groups)
     elif norm == "lcn":
         norm_layer = LocalContextNorm
+    elif norm == "identity":
+        norm_layer = None
     else:
         raise NotImplementedError
 

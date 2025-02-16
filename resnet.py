@@ -59,19 +59,32 @@ def main(
 ):
     device = get_device()
 
-    train_dataset = datasets.CIFAR100(
-        root=root,
-        train=True,
-        transform=image_transforms[dataset]["train"],
-        download=False,
-    )
+    if dataset == "cifar100":
+        train_dataset = datasets.CIFAR100(
+            root=root,
+            train=True,
+            transform=image_transforms[dataset]["train"],
+        )
 
-    test_dataset = datasets.CIFAR100(
-        root=root,
-        train=False,
-        transform=image_transforms[dataset]["test"],
-        download=False,
-    )
+        test_dataset = datasets.CIFAR100(
+            root=root,
+            train=False,
+            transform=image_transforms[dataset]["test"],
+        )
+    elif dataset == "imagenet":
+        train_dataset = datasets.ImageNet(
+            root=root,
+            split="train",
+            transform=image_transforms[dataset]["train"],
+        )
+
+        test_dataset = datasets.ImageNet(
+            root=root,
+            split="val",
+            transform=image_transforms[dataset]["test"],
+        )
+    else:
+        raise NotImplementedError
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)

@@ -18,13 +18,14 @@ from models import CNN
 import torch
 import matplotlib.pyplot as plt
 
+from normalization import *
+
 WIDTHS = {
     1: [32],
     2: [32, 64],
     3: [32, 64, 128],
     4: [32, 64, 128, 256],
 }
-
 
 def plot_training_losses(
     norms, seeds, all_train_losses, epochs, save_path="./training_loss_plot.png"
@@ -33,7 +34,7 @@ def plot_training_losses(
 
     colors = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:brown"]
     linestyles = ["-", "--", "-.", ":", (0, (3, 5, 1, 5)), (0, (5, 1))]
-    
+
 
 
     for norm_idx, norm in enumerate(norms):
@@ -132,7 +133,7 @@ def main(
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    norms = ["lcn", "bn", "agn", "gn", "in", "ln"]
+    norms = ["agn", "identity", "bn"]
 
     all_train_losses = {norm: [] for norm in norms}
     all_accs = {norm: [] for norm in norms}
