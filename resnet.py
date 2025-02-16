@@ -9,13 +9,15 @@ import torch.optim as optim
 import torchvision.models as models
 from torch.utils.data import DataLoader
 from torchvision import datasets
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from transforms import image_transforms
 from utils import *
 from normalization import *
+from losses import AdaptiveGroupNormLoss
 
 
-def train(dataloader, model, criterion, optimizer, epochs, device):
+def train(dataloader, model, criterion, optimizer, scheduler, epochs, device):
     model.train()
     print("Starting Training...")
     epoch_losses = []
@@ -33,6 +35,7 @@ def train(dataloader, model, criterion, optimizer, epochs, device):
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+        scheduler.step()
         epoch_losses.append(np.mean(losses))
         print(f"Epoch {epoch+1}: Loss = {np.mean(losses):.3f}")
     return epoch_losses
@@ -53,8 +56,9 @@ def main(
     seed: int = 0,
     root: str = "./data",
     dataset: str = "cifar100",
-    batch_size: int = 64,
+    batch_size: int = 256,
     alpha: float = 1e-3,
+    lam: float = 1e-2, # set to zero for normal cross entropy
     epochs: int = 10,
 ):
     device = get_device()
@@ -86,22 +90,27 @@ def main(
     else:
         raise NotImplementedError
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8, prefetch_factor=2)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=8, prefetch_factor=2)
 
-    for i in range(2):
+    ms = ["bn", "agn"]
+    for m in ms:
         set_random_seeds(seed)
         model = models.resnet18(weights=None).to(device)
-        if i == 0:
+        if m == "agn":
             replace_batch_norm_layers(model, AdaptiveGroupNorm)
         model = model.to(device)
-        optimizer = optim.AdamW(model.parameters(), lr=alpha)
-        criterion = nn.CrossEntropyLoss()
-        _ = train(train_loader, model, criterion, optimizer, epochs, device)
+        optimizer = optim.AdamW(model.parameters(), lr=alpha, weight_decay=0.05)
+        scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
+        if m == "agn":
+            criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
+        else:
+            criterion = nn.CrossEntropyLoss()
+        train_losses = train(train_loader, model, criterion, optimizer, scheduler, epochs, device)
         acc, test_loss = test(test_loader, model, criterion, device)
 
-        print(f"\n{i} → Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n")
-
+        print(f"\n{m} → Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n")
+        save_results(model, train_losses, acc, test_loss, f"./{dataset}", m)
 
 if __name__ == "__main__":
     typer.run(main)

@@ -19,6 +19,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from normalization import *
+from losses import AdaptiveGroupNormLoss
 
 WIDTHS = {
     1: [32],
@@ -110,9 +111,8 @@ def main(
     n_layers: int = 1,
     batch_size: int = 64,
     alpha: float = 1e-3,
+    lam: float = 1e-2, # set to zero for normal cross entropy
     epochs: int = 10,
-    n_groups: int = 4,
-    threshold: float = 0.5,
 ):
     device = get_device()
 
@@ -148,12 +148,17 @@ def main(
         for norm in norms:
             set_random_seeds(seed)
             print(f"Running {norm} with seed {seed}...")
-            norm_layer = get_norm_layer(norm, n_groups, threshold)
+            norm_layer = get_norm_layer(norm)
+            if norm == "agn":
+                norm_layer = norm_layer[:n_layers]
             model = CNN(
-                num_layers=n_layers, width=WIDTHS[n_layers], norm_layer=norm_layer
+                num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layer
             ).to(device)
             optimizer = optim.AdamW(model.parameters(), lr=alpha)
-            criterion = nn.CrossEntropyLoss()
+            if norm == "agn":
+                criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
+            else:
+                criterion = nn.CrossEntropyLoss()
 
             train_loss = train(
                 train_loader, model, criterion, optimizer, epochs, device
@@ -181,7 +186,7 @@ def main(
         seeds,
         all_train_losses,
         epochs,
-        save_path=f"./{epochs}_{n_layers}_{n_groups}.png",
+        save_path=f"./{epochs}_{n_layers}.png",
     )
 
 
