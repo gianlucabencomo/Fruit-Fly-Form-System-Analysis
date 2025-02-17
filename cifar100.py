@@ -1,3 +1,4 @@
+import os
 import typer
 from tqdm.auto import tqdm
 
@@ -23,7 +24,7 @@ WIDTHS = {
 }
 
 
-def train(train_loader, test_loader, model, criterion, optimizer, epochs, device):
+def train(train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device):
     print("Starting Training...")
     train_res, test_res = [], []
     for epoch in range(epochs):
@@ -39,6 +40,7 @@ def train(train_loader, test_loader, model, criterion, optimizer, epochs, device
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
+        scheduler.step()
         train_res.append(test(train_loader, model, nn.CrossEntropyLoss(), device))
         test_res.append(test(test_loader, model, nn.CrossEntropyLoss(), device))
         print(f"Epoch {epoch+1}: Loss = {train_res[-1][1]:.3f}")
@@ -61,12 +63,11 @@ def main(
     seeds: int = 3,
     root: str = "./data",
     n_layers: int = 4,
+    optim_name: str = "adamw",
     batch_size: int = 64,
-    alpha: float = 1e-3,
-    weight_decay: float = 0.01,
     dropout: float = 0.0,
     lam: float = 1e-3,  # set to zero for normal cross entropy
-    epochs: int = 40,
+    epochs: int = 200,
 ):
     device = get_device()
 
@@ -118,14 +119,14 @@ def main(
             model = CNN(
                 num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layer, dropout=dropout
             ).to(device)
-            optimizer = optim.AdamW(model.parameters(), lr=alpha, weight_decay=weight_decay)
+            optimizer, scheduler = get_optimizer_and_scheduler(model, optim_name, epochs)
             if norm == "agn":
                 criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
             else:
                 criterion = nn.CrossEntropyLoss()
 
             train_res, test_res = train(
-                train_loader, test_loader, model, criterion, optimizer, epochs, device
+                train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device
             )
 
             train_results[norm].append(train_res)
@@ -137,7 +138,7 @@ def main(
 
     os.makedirs("results", exist_ok=True)
     np.savez(
-        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}.npz"),
+        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}.npz"),
         train_results=train_results,
         test_results=test_results,
     )

@@ -46,6 +46,41 @@ def set_random_seeds(seed: int = 0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200):
+    """Optimizers and schedulers for CIFAR-100"""
+    if optimizer not in ["sgd", "adamw"]:
+        raise NotImplementedError(f"Optimizer '{optimizer}' is not implemented. Choose 'sgd' or 'adamw'.")
+
+    if optimizer == "sgd":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=0.1,            
+            momentum=0.9,      
+            weight_decay=5e-4,
+            nesterov=True
+        )
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=[100, 150],  # Decay LR at epochs 100 and 150
+            gamma=0.1               # Reduce LR by 10x at each milestone
+        )
+
+    elif optimizer == "adamw":
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=1e-3,
+            betas=(0.9, 0.999),
+            weight_decay=1e-2
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=epochs,
+            eta_min=1e-6
+        )
+
+    return optimizer, scheduler
+
+
 
 def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [4, 8, 16, 32]):
     # import inside function to avoid circular import error
