@@ -165,10 +165,7 @@ class AdaptiveGroupNorm(nn.Module):
         self.affine = affine
 
         self.Q = nn.Parameter(torch.randn(num_features, num_groups))
-        # nn.init.xavier_uniform_(self.Q)
-
         self.V = nn.Parameter(torch.randn(num_groups, num_features))
-        # nn.init.xavier_uniform_(self.V)
 
         if self.affine:
             self.gamma = nn.Parameter(torch.ones(num_features))

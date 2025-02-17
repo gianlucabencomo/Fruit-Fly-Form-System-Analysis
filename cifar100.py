@@ -135,7 +135,30 @@ def main(
                 f"\n{norm} → Seed {seed}: Test Accuracy: {test_res[-1][0]:.4f}, Test Loss: {test_res[-1][1]:.4f}\n"
             )
 
-    # TODO: Add print + save functionality
+    os.makedirs("results", exist_ok=True)
+    np.savez(
+        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}.npz"),
+        train_results=train_results,
+        test_results=test_results,
+    )
+
+    # Print the mean over seeds of the final epoch's results for each norm method
+    print("\nMean over seeds for each normalization method:")
+    for norm in norms:
+        # Extract final epoch metrics from each seed run
+        final_test_accs = [results[-1][0] for results in test_results[norm]]
+        final_test_losses = [results[-1][1] for results in test_results[norm]]
+        final_train_accs = [results[-1][0] for results in train_results[norm]]
+        final_train_losses = [results[-1][1] for results in train_results[norm]]
+        
+        mean_test_acc = np.mean(final_test_accs)
+        mean_test_loss = np.mean(final_test_losses)
+        mean_train_acc = np.mean(final_train_accs)
+        mean_train_loss = np.mean(final_train_losses)
+        
+        print(f"{norm}:")
+        print(f"  Final Test Accuracy = {mean_test_acc:.4f}, Final Test Loss = {mean_test_loss:.4f}")
+        print(f"  Final Train Accuracy = {mean_train_acc:.4f}, Final Train Loss = {mean_train_loss:.4f}")
 
 
 if __name__ == "__main__":
