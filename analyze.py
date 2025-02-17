@@ -98,15 +98,30 @@ def main(
         download=False,
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=torch.cuda.is_available(),  # Only use pin_memory if GPU is available
+        num_workers=8 if torch.cuda.is_available() else 0,
+        prefetch_factor=2 if torch.cuda.is_available() else None,
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=torch.cuda.is_available(),  # Only use pin_memory if GPU is available
+        num_workers=8 if torch.cuda.is_available() else 0,
+        prefetch_factor=2 if torch.cuda.is_available() else None,
+    )
 
     set_random_seeds(seed)
     norm_layers = [
-        partial(AdaptiveGroupNorm, 16),
-        partial(AdaptiveGroupNorm, 32),
-        partial(AdaptiveGroupNorm, 64),
-        partial(AdaptiveGroupNorm, 128),
+            partial(AdaptiveGroupNorm, 4),
+            partial(AdaptiveGroupNorm, 8),
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 32),
     ]
     norm_layers = norm_layers[:n_layers]
     model = CNN(
@@ -129,54 +144,54 @@ def main(
             Qs[i][key] = F.softmax(Qs[i][key], dim=0)
 
     # for last epoch only
-    i = len(Qs) - 1
-    for j, key in enumerate(Qs[i].keys()):  # layers
-        data = Qs[i][key].numpy()
-        groups = []
-        for k in range(data.shape[1]):  # groupings
-            sorted_data = np.flip(np.sort(data[:, k]))
-            y = 6 / len(sorted_data)
-            sorted_data = sorted_data[:10]  # first 10 values
-            groups.append(sorted_data)
-
-        num_groups = len(groups)
-        cols = min(8, num_groups)
+    last_epoch = len(Qs) - 1
+    for i, layer_key in enumerate(Qs[last_epoch].keys()):
+        # 'data' has shape: (num_features, num_groups)
+        data = Qs[last_epoch][layer_key].numpy()
+        num_groups = data.shape[1]
+        cols = min(5, num_groups)
         rows = (num_groups + cols - 1) // cols
 
-        fig, axes = plt.subplots(rows, cols, figsize=(15, 1.5 * rows))
-        fig.suptitle(f"Epoch {i}, Layer {key}")
+        fig, axes = plt.subplots(rows, cols, figsize=(15, 3 * rows))
+        axes = axes.flatten()
 
-        # Ensure axes is always a 2D array for consistent indexing
-        if rows == 1:
-            axes = np.expand_dims(axes, axis=0)
-        if cols == 1:
-            axes = np.expand_dims(axes, axis=1)
+        for group_idx in range(num_groups):
+            ax = axes[group_idx]
+            p = data[:, group_idx]
+            H = -np.sum(p * np.log(p + 1e-8))
+            # Sort the probabilities in descending order and select the top 10.
+            sorted_indices = np.argsort(p)[::-1]
+            top_indices = sorted_indices[:10]
+            top_p = p[top_indices]
+            # Convert indices to string labels.
+            top_labels = [str(idx) for idx in top_indices]
+            # Compute a threshold similar to the second snippet:
+            threshold = 10 * (1 / len(p))
+            # Create the bar plot.
+            ax.bar(top_labels, top_p, alpha=0.7, edgecolor="black")
+            ax.axhline(y=threshold, alpha=0.7, ls="--", c="red")
+            ax.set_title(f"Gr{group_idx}", fontsize=12)
+            ax.set_ylabel("In Percentage")
+            ax.set_xticklabels(top_labels, rotation=60)
+            # Annotate with entropy.
+            ax.text(
+                0.95,
+                0.95,
+                f"H[p] = {H:.3f}",
+                transform=ax.transAxes,
+                fontsize=10,
+                verticalalignment="top",
+                horizontalalignment="right",
+                bbox=dict(facecolor="white", alpha=0.6, edgecolor="black"),
+            )
 
-        for idx, sorted_data in enumerate(groups):
-            row, col = divmod(idx, cols)
-            axes[row, col].bar(range(len(sorted_data)), sorted_data)
-            axes[row, col].axhline(y=y, color="r", linestyle="--")
-            axes[row, col].set_title(f"Group {idx}")
-
-        # Hide unused subplots
-        for idx in range(num_groups, rows * cols):
-            row, col = divmod(idx, cols)
-            fig.delaxes(axes[row, col])
+        # Remove any unused subplots.
+        for j in range(num_groups, len(axes)):
+            fig.delaxes(axes[j])
 
         plt.tight_layout()
-        plt.show()
-    #         x = np.arange(data.shape[0])
-    #         width = 0.1
-
-    #         for k in range(data.shape[1]):
-    #             ax.bar(x + k * width, data[:, k], width, alpha=0.7, label=f"Output {k+1}")
-
-    #         ax.set_title(f"Epoch {i+1} - {key}")
-    #         ax.set_xlabel("Feature Index")
-    #         ax.set_ylabel("Softmax Value")
-
-    # plt.tight_layout()
-    # plt.show()
+        plt.savefig(f"layer{i+1}.png", dpi=300)
+        plt.close()
 
 
 if __name__ == "__main__":

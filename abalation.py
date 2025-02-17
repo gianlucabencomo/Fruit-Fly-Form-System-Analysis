@@ -103,7 +103,7 @@ def main(
             partial(AdaptiveGroupNorm, 4),
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
-            partial(AdaptiveGroupNorm, 64),
+            partial(AdaptiveGroupNorm, 32),
         ],
         [
             partial(AdaptiveGroupNorm, 8),

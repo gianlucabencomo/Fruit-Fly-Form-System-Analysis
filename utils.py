@@ -47,7 +47,7 @@ def set_random_seeds(seed: int = 0):
     torch.backends.cudnn.benchmark = False
 
 
-def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [16, 32, 64, 128]):
+def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [4, 8, 16, 32]):
     # import inside function to avoid circular import error
     from normalization import (
         BatchNorm2d,
