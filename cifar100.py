@@ -24,7 +24,7 @@ WIDTHS = {
 }
 
 
-def train(train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device):
+def train(train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device, clip: bool = False):
     train_res, test_res = [], []
     for epoch in tqdm(range(epochs), desc="Training"):
         model.train() # set back to train after test sets to eval
@@ -35,7 +35,8 @@ def train(train_loader, test_loader, model, criterion, optimizer, scheduler, epo
             loss = criterion(pred, y)
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            if clip:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             optimizer.zero_grad()
         scheduler.step()
@@ -60,11 +61,12 @@ def main(
     seeds: int = 3,
     root: str = "./data",
     n_layers: int = 4,
+    epochs: int = 200,
     optim_name: str = "adamw",
     batch_size: int = 64,
     dropout: float = 0.0,
     lam: float = 1e-2,  # set to zero for normal cross entropy
-    epochs: int = 200,
+    clip: bool = False
 ):
     device = get_device()
 
@@ -87,8 +89,8 @@ def main(
         batch_size=batch_size,
         shuffle=True,
         pin_memory=torch.cuda.is_available(),  # Only use pin_memory if GPU is available
-        num_workers=8 if torch.cuda.is_available() else 2,
-        prefetch_factor=2,
+        num_workers=8 if torch.cuda.is_available() else 0,
+        prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
     test_loader = DataLoader(
@@ -96,8 +98,8 @@ def main(
         batch_size=256, # Larger batch sizes for testing
         shuffle=False,
         pin_memory=torch.cuda.is_available(),  # Only use pin_memory if GPU is available
-        num_workers=8 if torch.cuda.is_available() else 2,
-        prefetch_factor=2,
+        num_workers=8 if torch.cuda.is_available() else 0,
+        prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
     norms = ["agn", "identity", "bn", "ln", "gn", "in"]
@@ -123,7 +125,7 @@ def main(
                 criterion = nn.CrossEntropyLoss()
 
             train_res, test_res = train(
-                train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device
+                train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device, clip
             )
 
             train_results[norm].append(train_res)
@@ -134,8 +136,9 @@ def main(
             )
 
     os.makedirs("results", exist_ok=True)
+    lam_str = f"{lam:.0e}" if lam != 0.0 else "no_lam"
     np.savez(
-        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{'no_lam' if lam == 0.0 else ''}.npz"),
+        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{lam_str}_{clip}.npz"),
         train_results=train_results,
         test_results=test_results,
     )
