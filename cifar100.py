@@ -24,10 +24,10 @@ WIDTHS = {
 
 
 def train(train_loader, test_loader, model, criterion, optimizer, epochs, device):
-    model.train()
     print("Starting Training...")
     train_res, test_res = [], []
     for epoch in range(epochs):
+        model.train() # set back to train after test sets to eval
         for X, y in tqdm(
             train_loader, total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}"
         ):
