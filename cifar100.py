@@ -25,25 +25,22 @@ WIDTHS = {
 
 
 def train(train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device):
-    print("Starting Training...")
     train_res, test_res = [], []
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs), desc="Training"):
         model.train() # set back to train after test sets to eval
-        for X, y in tqdm(
-            train_loader, total=len(train_loader), desc=f"Epoch {epoch+1}/{epochs}"
-        ):
+        for X, y in train_loader:
             X, y = X.to(device), y.to(device)
 
             pred = model(X)
             loss = criterion(pred, y)
 
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             optimizer.zero_grad()
         scheduler.step()
         train_res.append(test(train_loader, model, nn.CrossEntropyLoss(), device))
         test_res.append(test(test_loader, model, nn.CrossEntropyLoss(), device))
-        print(f"Epoch {epoch+1}: Loss = {train_res[-1][1]:.3f}")
     return train_res, test_res
 
 
@@ -66,7 +63,7 @@ def main(
     optim_name: str = "adamw",
     batch_size: int = 64,
     dropout: float = 0.0,
-    lam: float = 1e-3,  # set to zero for normal cross entropy
+    lam: float = 1e-2,  # set to zero for normal cross entropy
     epochs: int = 200,
 ):
     device = get_device()
@@ -96,7 +93,7 @@ def main(
 
     test_loader = DataLoader(
         test_dataset,
-        batch_size=batch_size,
+        batch_size=256, # Larger batch sizes for testing
         shuffle=False,
         pin_memory=torch.cuda.is_available(),  # Only use pin_memory if GPU is available
         num_workers=8 if torch.cuda.is_available() else 2,
@@ -112,7 +109,7 @@ def main(
     for seed in seeds:
         for norm in norms:
             set_random_seeds(seed)
-            print(f"Running {norm} with seed {seed}...")
+            print(f"Running {norm} with seed {seed}, optimizer {optim_name}, batch size {batch_size}, lam {lam}, and dropout {dropout}.")
             norm_layer = get_norm_layer(norm)
             if norm in ["agn", "gn", "agn2"]:
                 norm_layer = norm_layer[:n_layers]

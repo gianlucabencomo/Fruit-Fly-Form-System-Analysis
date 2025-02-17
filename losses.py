@@ -29,7 +29,8 @@ class AdaptiveGroupNormLoss(nn.Module):
         return loss
 
     def forward(self, logits, targets):
+        B = logits.shape[0]
         loss = self.ce(logits, targets)
         if self.lam > 0.0 or self.model == None:
-            loss += self.lam * self.regularize_Q()
+            loss += self.lam * self.regularize_Q() / B # make sure equal contribution per epoch of regularizer (batch-size indep.)
         return loss

@@ -61,8 +61,8 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200):
         )
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
-            milestones=[100, 150],  # Decay LR at epochs 100 and 150
-            gamma=0.1               # Reduce LR by 10x at each milestone
+            milestones=[int(0.5 * epochs), int(0.75 * epochs)],
+            gamma=0.1              
         )
 
     elif optimizer == "adamw":
