@@ -135,7 +135,7 @@ def main(
 
     os.makedirs("results", exist_ok=True)
     np.savez(
-        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}.npz"),
+        os.path.join("results", f"cifar100_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{'no_lam' if lam == 0.0 else ''}.npz"),
         train_results=train_results,
         test_results=test_results,
     )
