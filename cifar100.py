@@ -47,12 +47,13 @@ def train(train_loader, test_loader, model, criterion, optimizer, epochs, device
 
 def test(dataloader, model, criterion, device):
     model.eval()
-    correct, losses = 0, []
-    for X, y in dataloader:
-        X, y = X.to(device), y.to(device)
-        pred = model(X)
-        losses.append(criterion(pred, y).detach().cpu().numpy())
-        correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+    with torch.no_grad():
+        correct, losses = 0, []
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            losses.append(criterion(pred, y).detach().cpu().numpy())
+            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
     return correct / len(dataloader.dataset), np.mean(losses)
 
 
