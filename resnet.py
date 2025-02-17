@@ -58,7 +58,9 @@ def main(
     dataset: str = "cifar100",
     batch_size: int = 256,
     alpha: float = 1e-3,
-    lam: float = 1e-2, # set to zero for normal cross entropy
+    weight_decay: float = 0.05,
+    lam: float = 1e-2,  # set to zero for normal cross entropy
+    compression_factor: int = 4,
     epochs: int = 10,
 ):
     device = get_device()
@@ -90,27 +92,44 @@ def main(
     else:
         raise NotImplementedError
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=8, prefetch_factor=2)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=8, prefetch_factor=2)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=True,
+        num_workers=8,
+        prefetch_factor=2,
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=8,
+        prefetch_factor=2,
+    )
 
     ms = ["bn", "agn"]
     for m in ms:
         set_random_seeds(seed)
         model = models.resnet18(weights=None).to(device)
         if m == "agn":
-            replace_batch_norm_layers(model, AdaptiveGroupNorm)
+            replace_batch_norm_layers(model, AdaptiveGroupNorm, compression_factor=compression_factor)
         model = model.to(device)
-        optimizer = optim.AdamW(model.parameters(), lr=alpha, weight_decay=0.05)
+        optimizer = optim.AdamW(model.parameters(), lr=alpha, weight_decay=weight_decay)
         scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
         if m == "agn":
             criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
         else:
             criterion = nn.CrossEntropyLoss()
-        train_losses = train(train_loader, model, criterion, optimizer, scheduler, epochs, device)
+        train_losses = train(
+            train_loader, model, criterion, optimizer, scheduler, epochs, device
+        )
         acc, test_loss = test(test_loader, model, criterion, device)
 
         print(f"\n{m} → Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n")
-        save_results(model, train_losses, acc, test_loss, f"./{dataset}", m)
+        #save_results(model, train_losses, acc, test_loss, f"./{dataset}", m)
+
 
 if __name__ == "__main__":
     typer.run(main)

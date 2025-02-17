@@ -28,7 +28,7 @@ image_transforms = {
         ),
     },
     "imagenet": {
-        "train":  transforms.Compose(
+        "train": transforms.Compose(
             [
                 transforms.RandomResizedCrop(224),
                 transforms.ColorJitter(
@@ -36,9 +36,7 @@ image_transforms = {
                 ),
                 transforms.RandomRotation(15),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                ),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ]
         ),
         "test": transforms.Compose(
@@ -46,10 +44,8 @@ image_transforms = {
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
                 transforms.ToTensor(),
-                transforms.Normalize(
-                    (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
-                ),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
             ]
         ),
-    }
+    },
 }

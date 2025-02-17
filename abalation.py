@@ -15,6 +15,9 @@ from utils import *
 import matplotlib.pyplot as plt
 from models import CNN
 
+import torch
+import matplotlib.pyplot as plt
+
 from normalization import *
 from losses import AdaptiveGroupNormLoss
 
@@ -24,53 +27,6 @@ WIDTHS = {
     3: [32, 64, 128],
     4: [32, 64, 128, 256],
 }
-
-
-def plot_training_losses(
-    norms, seeds, all_train_losses, epochs, save_path="./training_loss_plot.png"
-):
-    plt.figure(figsize=(10, 5))
-
-    colors = [
-        "tab:blue",
-        "tab:orange",
-        "tab:green",
-        "tab:red",
-        "tab:purple",
-        "tab:brown",
-    ]
-    linestyles = ["-", "--", "-.", ":", (0, (3, 5, 1, 5)), (0, (5, 1))]
-
-    for norm_idx, norm in enumerate(norms):
-        color = colors[norm_idx % len(colors)]  # Assign a color to each norm
-
-        for seed_idx, seed in enumerate(seeds):
-            linestyle = linestyles[
-                seed_idx % len(linestyles)
-            ]  # Assign a unique line style per seed
-
-            plt.plot(
-                range(1, epochs + 1),
-                all_train_losses[norm][seed_idx],
-                label=f"{norm}"
-                if seed_idx == 0
-                else None,  # Label only the first seed per norm
-                color=color,
-                linestyle=linestyle,
-                alpha=0.7,  # Transparency for clarity
-            )
-
-    plt.xlabel("Epochs")
-    plt.ylabel("Training Loss")
-    plt.title("Training Loss per Normalization Method Across Seeds")
-    plt.legend()
-    plt.grid(True)
-
-    # Save the plot instead of showing it
-    plt.savefig(save_path, dpi=300, bbox_inches="tight")
-    plt.close()  # Close the plot to free memory
-
-    print(f"Plot saved as {save_path}")
 
 
 def train(dataloader, model, criterion, optimizer, epochs, device):
@@ -108,14 +64,13 @@ def test(dataloader, model, criterion, device):
 
 
 def main(
-    seeds: int = 5,
+    seeds: int = 3,
     root: str = "./data",
     dataset: str = "cifar100",
-    n_layers: int = 1,
+    n_layers: int = 4,
     batch_size: int = 64,
     alpha: float = 1e-3,
-    lam: float = 1e-3,  # set to zero for normal cross entropy
-    epochs: int = 10,
+    epochs: int = 20,
 ):
     device = get_device()
 
@@ -136,11 +91,39 @@ def main(
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    norms = ["agn", "identity", "bn"]
+    lams = [0.0, 1e-1, 1e-2, 1e-3, 1e-4]
+    norms = [
+        [
+            partial(AdaptiveGroupNorm, 2),
+            partial(AdaptiveGroupNorm, 4),
+            partial(AdaptiveGroupNorm, 8),
+            partial(AdaptiveGroupNorm, 16),
+        ],
+        [
+            partial(AdaptiveGroupNorm, 4),
+            partial(AdaptiveGroupNorm, 8),
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 64),
+        ],
+        [
+            partial(AdaptiveGroupNorm, 8),
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 32),
+            partial(AdaptiveGroupNorm, 64),
+        ],
+        [
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 32),
+            partial(AdaptiveGroupNorm, 64),
+            partial(AdaptiveGroupNorm, 128),
+        ]
+    ]
 
-    all_train_losses = {norm: [] for norm in norms}
-    all_accs = {norm: [] for norm in norms}
-    all_test_losses = {norm: [] for norm in norms}
+    from itertools import product
+
+    all_train_losses = {i: [] for i in list(product(range(len(norms)), lams))}
+    all_accs = {i: [] for i in list(product(range(len(norms)), lams))}
+    all_test_losses = {i: [] for i in list(product(range(len(norms)), lams))}
 
     print("\n=== Running Experiments Across Seeds ===\n")
 
@@ -148,49 +131,37 @@ def main(
     for seed in seeds:
         print(f"\n--- Running for Seed {seed} ---\n")
 
-        for norm in norms:
+        for i, lam in list(product(range(len(norms)), lams)):
             set_random_seeds(seed)
-            print(f"Running {norm} with seed {seed}...")
-            norm_layer = get_norm_layer(norm)
-            if norm == "agn":
-                norm_layer = norm_layer[:n_layers]
+            print(f"Running {i} with seed {seed}...")
+            norm_layer = norms[i]
+            norm_layer = norm_layer[:n_layers]
             model = CNN(
                 num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layer
             ).to(device)
             optimizer = optim.AdamW(model.parameters(), lr=alpha)
-            if norm == "agn":
-                criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
-            else:
-                criterion = nn.CrossEntropyLoss()
+            criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
 
             train_loss = train(
                 train_loader, model, criterion, optimizer, epochs, device
             )
             acc, test_loss = test(test_loader, model, criterion, device)
 
-            all_train_losses[norm].append(train_loss)
-            all_accs[norm].append(acc)
-            all_test_losses[norm].append(test_loss)
+            all_train_losses[(i, lam)].append(train_loss)
+            all_accs[(i, lam)].append(acc)
+            all_test_losses[(i, lam)].append(test_loss)
 
             print(
-                f"\n{norm} → Seed {seed}: Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n"
+                f"\n{(i, lam)} → Seed {seed}: Test Accuracy: {acc:.4f}, Test Loss: {test_loss:.4f}\n"
             )
 
     print("\n=== Final Results Across Seeds ===")
-    for norm in norms:
-        avg_acc = np.mean(all_accs[norm])
-        avg_loss = np.mean(all_test_losses[norm])
+    for i in list(product(range(len(norms)), lams)):
+        avg_acc = np.mean(all_accs[i])
+        avg_loss = np.mean(all_test_losses[i])
         print(
-            f"{norm}: Avg Test Accuracy = {avg_acc:.4f}, Avg Test Loss = {avg_loss:.4f}"
+            f"{i}: Avg Test Accuracy = {avg_acc:.4f}, Avg Test Loss = {avg_loss:.4f}"
         )
-
-    plot_training_losses(
-        norms,
-        seeds,
-        all_train_losses,
-        epochs,
-        save_path=f"./{epochs}_{n_layers}.png",
-    )
 
 
 if __name__ == "__main__":

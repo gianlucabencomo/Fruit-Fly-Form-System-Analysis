@@ -11,9 +11,13 @@ import math
 
 from utils import get_device
 
+
 class LocalContextNorm(nn.Module):
     """Code adapted from https://github.com/anthonymlortiz/lcn."""
-    def __init__(self, num_features, channels_per_group=2, window_size=(16, 16), eps=1e-5):
+
+    def __init__(
+        self, num_features, channels_per_group=2, window_size=(16, 16), eps=1e-5
+    ):
         super(LocalContextNorm, self).__init__()
         self.gamma = nn.Parameter(torch.ones(1, num_features, 1, 1))
         self.beta = nn.Parameter(torch.zeros(1, num_features, 1, 1))
@@ -28,34 +32,56 @@ class LocalContextNorm(nn.Module):
         assert C % self.channels_per_group == 0
         if self.window_size[0] < H and self.window_size[1] < W:
             # Build integral image
-            x_squared = x ** 2
+            x_squared = x**2
             integral_img = x.cumsum(dim=2).cumsum(dim=3)
             integral_img_sq = x_squared.cumsum(dim=2).cumsum(dim=3)
             # Dilation
             d = (1, self.window_size[0], self.window_size[1])
             integral_img = torch.unsqueeze(integral_img, dim=1)
             integral_img_sq = torch.unsqueeze(integral_img_sq, dim=1)
-            kernel = torch.tensor([[[[[1., -1.], [-1., 1.]]]]]).to(self.device)
+            kernel = torch.tensor([[[[[1.0, -1.0], [-1.0, 1.0]]]]]).to(self.device)
             c_kernel = torch.ones((1, 1, self.channels_per_group, 1, 1)).to(self.device)
             with torch.no_grad():
                 # Dilated conv
                 sums = F.conv3d(integral_img, kernel, stride=[1, 1, 1], dilation=d)
                 sums = F.conv3d(sums, c_kernel, stride=[self.channels_per_group, 1, 1])
-                squares = F.conv3d(integral_img_sq, kernel, stride=[1, 1, 1], dilation=d)
-                squares = F.conv3d(squares, c_kernel, stride=[self.channels_per_group, 1, 1])
+                squares = F.conv3d(
+                    integral_img_sq, kernel, stride=[1, 1, 1], dilation=d
+                )
+                squares = F.conv3d(
+                    squares, c_kernel, stride=[self.channels_per_group, 1, 1]
+                )
             n = self.window_size[0] * self.window_size[1] * self.channels_per_group
             means = torch.squeeze(sums / n, dim=1)
             var = torch.squeeze((1.0 / n * (squares - sums * sums / n)), dim=1)
             _, _, h, w = means.size()
-            pad2d = (int(math.floor((W - w) / 2)), int(math.ceil((W - w) / 2)), int(math.floor((H - h) / 2)),
-                     int(math.ceil((H - h) / 2)))
-            padded_means = F.pad(means, pad2d, 'replicate')
-            padded_vars = F.pad(var, pad2d, 'replicate') + self.eps
+            pad2d = (
+                int(math.floor((W - w) / 2)),
+                int(math.ceil((W - w) / 2)),
+                int(math.floor((H - h) / 2)),
+                int(math.ceil((H - h) / 2)),
+            )
+            padded_means = F.pad(means, pad2d, "replicate")
+            padded_vars = F.pad(var, pad2d, "replicate") + self.eps
             for i in range(G):
-                x[:, i * self.channels_per_group:i * self.channels_per_group + self.channels_per_group, :, :] = \
-                    (x[:, i * self.channels_per_group:i * self.channels_per_group + self.channels_per_group, :, :] -
-                     torch.unsqueeze(padded_means[:, i, :, :], dim=1).to(self.device)) /\
-                    ((torch.unsqueeze(padded_vars[:, i, :, :], dim=1)).to(self.device)).sqrt()
+                x[
+                    :,
+                    i * self.channels_per_group : i * self.channels_per_group
+                    + self.channels_per_group,
+                    :,
+                    :,
+                ] = (
+                    x[
+                        :,
+                        i * self.channels_per_group : i * self.channels_per_group
+                        + self.channels_per_group,
+                        :,
+                        :,
+                    ]
+                    - torch.unsqueeze(padded_means[:, i, :, :], dim=1).to(self.device)
+                ) / (
+                    (torch.unsqueeze(padded_vars[:, i, :, :], dim=1)).to(self.device)
+                ).sqrt()
             del integral_img
             del integral_img_sq
         else:
@@ -69,6 +95,9 @@ class LocalContextNorm(nn.Module):
 
 
 class AdaptiveGroupNorm2(nn.Module):
+    """This version normalizes within the latent dimension and the projects back out.
+    
+        This does not work as well as AdaptiveGroupNorm."""
     def __init__(self, num_groups, num_features, eps=1e-05, affine=True):
         super().__init__()
         assert (
@@ -122,6 +151,7 @@ class AdaptiveGroupNorm2(nn.Module):
             x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
         return x_hat
 
+
 class AdaptiveGroupNorm(nn.Module):
     def __init__(self, num_groups, num_features, eps=1e-05, affine=False):
         super().__init__()
@@ -135,10 +165,10 @@ class AdaptiveGroupNorm(nn.Module):
         self.affine = affine
 
         self.Q = nn.Parameter(torch.randn(num_features, num_groups))
-        #nn.init.xavier_uniform_(self.Q)
+        # nn.init.xavier_uniform_(self.Q)
 
         self.V = nn.Parameter(torch.randn(num_groups, num_features))
-        #nn.init.xavier_uniform_(self.V)
+        # nn.init.xavier_uniform_(self.V)
 
         if self.affine:
             self.gamma = nn.Parameter(torch.ones(num_features))
@@ -478,19 +508,6 @@ def unit_tests(
     # test_group_norm()
     # test_layer_norm()
     test_dynamic_group_norm()
-    exit()
-
-    local_norm = LocalBatchNorm2d(
-        height=height,
-        width=width,
-        n_channels=channels,
-        kernel_size=kernel_size,
-        stride=stride,
-    )
-
-    output = local_norm(x)
-    print("Input shape: ", x.shape)
-    print("Output shape: ", output.shape)
 
 
 if __name__ == "__main__":

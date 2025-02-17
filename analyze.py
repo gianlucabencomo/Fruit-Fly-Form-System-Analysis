@@ -25,6 +25,7 @@ WIDTHS = {
     4: [32, 64, 128, 256],
 }
 
+
 def update_q_v(model, Qs, Vs):
     q, v = {}, {}
     for name, module in model.named_modules():
@@ -33,6 +34,7 @@ def update_q_v(model, Qs, Vs):
             v[name] = module.V.detach().cpu()
     Qs.append(q)
     Vs.append(v)
+
 
 def train(dataloader, model, criterion, optimizer, epochs, device):
     model.train()
@@ -76,7 +78,7 @@ def main(
     n_layers: int = 4,
     batch_size: int = 64,
     alpha: float = 1e-3,
-    lam: float = 1e-2, # set to zero for normal cross entropy
+    lam: float = 1e-3,  # set to zero for normal cross entropy
     epochs: int = 10,
 ):
     device = get_device()
@@ -100,7 +102,12 @@ def main(
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     set_random_seeds(seed)
-    norm_layers = [partial(AdaptiveGroupNorm, 16), partial(AdaptiveGroupNorm, 32), partial(AdaptiveGroupNorm, 64), partial(AdaptiveGroupNorm, 128)]
+    norm_layers = [
+        partial(AdaptiveGroupNorm, 16),
+        partial(AdaptiveGroupNorm, 32),
+        partial(AdaptiveGroupNorm, 64),
+        partial(AdaptiveGroupNorm, 128),
+    ]
     norm_layers = norm_layers[:n_layers]
     model = CNN(
         num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layers
@@ -123,43 +130,43 @@ def main(
 
     # for last epoch only
     i = len(Qs) - 1
-    for j, key in enumerate(Qs[i].keys()): # layers
+    for j, key in enumerate(Qs[i].keys()):  # layers
         data = Qs[i][key].numpy()
         groups = []
-        for k in range(data.shape[1]): # groupings
+        for k in range(data.shape[1]):  # groupings
             sorted_data = np.flip(np.sort(data[:, k]))
             y = 6 / len(sorted_data)
-            sorted_data = sorted_data[:10] # first 10 values
+            sorted_data = sorted_data[:10]  # first 10 values
             groups.append(sorted_data)
 
         num_groups = len(groups)
         cols = min(8, num_groups)
         rows = (num_groups + cols - 1) // cols
-        
+
         fig, axes = plt.subplots(rows, cols, figsize=(15, 1.5 * rows))
         fig.suptitle(f"Epoch {i}, Layer {key}")
-        
+
         # Ensure axes is always a 2D array for consistent indexing
         if rows == 1:
             axes = np.expand_dims(axes, axis=0)
         if cols == 1:
             axes = np.expand_dims(axes, axis=1)
-        
+
         for idx, sorted_data in enumerate(groups):
             row, col = divmod(idx, cols)
             axes[row, col].bar(range(len(sorted_data)), sorted_data)
-            axes[row, col].axhline(y=y, color='r', linestyle='--')
+            axes[row, col].axhline(y=y, color="r", linestyle="--")
             axes[row, col].set_title(f"Group {idx}")
-        
+
         # Hide unused subplots
         for idx in range(num_groups, rows * cols):
             row, col = divmod(idx, cols)
             fig.delaxes(axes[row, col])
-        
+
         plt.tight_layout()
         plt.show()
     #         x = np.arange(data.shape[0])
-    #         width = 0.1 
+    #         width = 0.1
 
     #         for k in range(data.shape[1]):
     #             ax.bar(x + k * width, data[:, k], width, alpha=0.7, label=f"Output {k+1}")
@@ -170,13 +177,6 @@ def main(
 
     # plt.tight_layout()
     # plt.show()
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":

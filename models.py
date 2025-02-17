@@ -6,8 +6,8 @@ import torch.nn.functional as F
 class CNN(nn.Module):
     def __init__(
         self,
-        num_layers=3,
-        width=[32, 64, 128],
+        num_layers=4,
+        width=[32, 64, 128, 256],
         kernel_size=3,
         activation=nn.ReLU,
         pooling=nn.MaxPool2d,
@@ -20,7 +20,9 @@ class CNN(nn.Module):
         assert num_layers <= 4, "Number of Layers must be less than 5."
         assert len(width) >= num_layers, "Width list must match or exceed num_layers."
         if isinstance(norm_layers, list):
-            assert len(norm_layers) == num_layers, "Number of norm layers must equal number of layers."
+            assert (
+                len(norm_layers) == num_layers
+            ), "Number of norm layers must equal number of layers."
         self.num_layers = num_layers
         self.activation = activation()
         self.pool = pooling(kernel_size=2, stride=2)
@@ -42,7 +44,9 @@ class CNN(nn.Module):
             if isinstance(norm_layers, list):
                 self.norms.append(norm_layers[i](out_channels))
             else:
-                self.norms.append(norm_layers(out_channels) if norm_layers else nn.Identity())
+                self.norms.append(
+                    norm_layers(out_channels) if norm_layers else nn.Identity()
+                )
             in_channels = out_channels  # Update input channels for next layer
 
         fc_input_dim = (
