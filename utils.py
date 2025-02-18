@@ -4,30 +4,6 @@ import numpy as np
 import random
 from functools import partial
 
-import os
-import json
-
-
-def save_results(model, train_losses, test_acc, test_loss, save_dir, model_name):
-    """Saves model weights and training results."""
-    os.makedirs(save_dir, exist_ok=True)
-
-    # Save model weights
-    model_path = os.path.join(save_dir, f"{model_name}.pth")
-    torch.save(model.state_dict(), model_path)
-    print(f"Model weights saved to {model_path}")
-
-    # Save training losses and test results
-    results = {
-        "train_losses": train_losses,
-        "test_accuracy": test_acc,
-        "test_loss": test_loss,
-    }
-    results_path = os.path.join(save_dir, f"{model_name}_results.json")
-    with open(results_path, "w") as f:
-        json.dump(results, f, indent=4)
-    print(f"Training results saved to {results_path}")
-
 
 def get_device():
     if torch.backends.mps.is_available():
@@ -57,7 +33,6 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200):
             lr=0.1,            
             momentum=0.9,      
             weight_decay=5e-4,
-            nesterov=True
         )
         scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,

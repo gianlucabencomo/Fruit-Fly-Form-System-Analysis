@@ -500,10 +500,10 @@ def unit_tests(
     kernel_size: int = 3,
     stride: int = 1,
 ):
-    # test_batch_norm()
-    # test_instance_norm()
-    # test_group_norm()
-    # test_layer_norm()
+    test_batch_norm()
+    test_instance_norm()
+    test_group_norm()
+    test_layer_norm()
     test_dynamic_group_norm()
 
 

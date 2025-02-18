@@ -118,10 +118,10 @@ def main(
 
     set_random_seeds(seed)
     norm_layers = [
-            partial(AdaptiveGroupNorm, 2),
             partial(AdaptiveGroupNorm, 4),
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 32),
     ]
     norm_layers = norm_layers[:n_layers]
     model = CNN(
@@ -143,12 +143,7 @@ def main(
         for key in Qs[i].keys():
             Qs[i][key] = F.softmax(Qs[i][key], dim=0)
             Vs[i][key] = F.softmax(Vs[i][key], dim=1)
-            p = Qs[i][key]
-            print(f"Q : {-torch.sum(p * torch.log(p + 1e-8), dim=0).mean()}")
-            p = Vs[i][key]
-            print(f"V : {-torch.sum(p * torch.log(p + 1e-8), dim=1).mean()}")
-        print()
-    exit()
+
     # for last epoch only
     last_epoch = len(Qs) - 1
     for i, layer_key in enumerate(Qs[last_epoch].keys()):

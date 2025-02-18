@@ -104,24 +104,28 @@ def main(
     lams = [0.0, 1e-1, 1e-2]
     norms = [
         [
+            # compression factor: 16
             partial(AdaptiveGroupNorm, 2),
             partial(AdaptiveGroupNorm, 4),
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
         ],
         [
+            # compression factor: 8
             partial(AdaptiveGroupNorm, 4),
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
             partial(AdaptiveGroupNorm, 32),
         ],
         [
+            # compression factor: 4
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
             partial(AdaptiveGroupNorm, 32),
             partial(AdaptiveGroupNorm, 64),
         ],
         [
+            # compression factor: 2
             partial(AdaptiveGroupNorm, 16),
             partial(AdaptiveGroupNorm, 32),
             partial(AdaptiveGroupNorm, 64),
@@ -160,7 +164,7 @@ def main(
 
     os.makedirs("results", exist_ok=True)
     np.savez(
-        os.path.join("results", f"ablation_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}.npz"),
+        os.path.join("results", f"ablation_0_01_sgd_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}.npz"),
         train_results=train_results,
         test_results=test_results,
     )
