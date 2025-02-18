@@ -118,6 +118,7 @@ def main(
 
     set_random_seeds(seed)
     norm_layers = [
+            # Compression factor: 8
             partial(AdaptiveGroupNorm, 4),
             partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),

@@ -16,6 +16,9 @@ from models import CNN
 from normalization import *
 from losses import AdaptiveGroupNormLoss
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+
 WIDTHS = {
     1: [32],
     2: [32, 64],
@@ -61,10 +64,10 @@ def main(
     seeds: int = 3,
     root: str = "./data",
     n_layers: int = 4,
-    epochs: int = 200,
+    epochs: int = 300,
     optim_name: str = "sgd",
     batch_size: int = 64,
-    dropout: float = 0.0,
+    dropout: float = 0.5,
     clip: bool = False
 ):
     device = get_device()
@@ -101,7 +104,7 @@ def main(
         prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
-    lams = [0.0, 1e-1, 1e-2]
+    lams = [1.0, 0.0, 1e-1, 1e-2, 1e-3]
     norms = [
         [
             # compression factor: 16
@@ -164,7 +167,7 @@ def main(
 
     os.makedirs("results", exist_ok=True)
     np.savez(
-        os.path.join("results", f"ablation_0_01_sgd_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}.npz"),
+        os.path.join("results", f"ablation_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}.npz"),
         train_results=train_results,
         test_results=test_results,
     )

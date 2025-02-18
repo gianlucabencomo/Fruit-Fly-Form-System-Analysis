@@ -22,19 +22,20 @@ def set_random_seeds(seed: int = 0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200):
+def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup_epochs: int = 5):
     """Optimizers and schedulers for CIFAR-100"""
     if optimizer not in ["sgd", "adamw"]:
         raise NotImplementedError(f"Optimizer '{optimizer}' is not implemented. Choose 'sgd' or 'adamw'.")
-
+    assert epochs > warmup_epochs, "Total epochs must be greater than number of warm-up epochs (5)."
+    epochs = epochs - warmup_epochs
     if optimizer == "sgd":
         optimizer = torch.optim.SGD(
             model.parameters(),
-            lr=0.1,            
+            lr=0.01,            
             momentum=0.9,      
-            weight_decay=5e-4,
+            weight_decay=1e-4,
         )
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        main_scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
             milestones=[int(0.5 * epochs), int(0.75 * epochs)],
             gamma=0.1              
@@ -47,11 +48,24 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200):
             betas=(0.9, 0.999),
             weight_decay=1e-2
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
             T_max=epochs,
             eta_min=1e-6
         )
+
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=1e-2,  # Start at 1% of base LR
+        end_factor=1.0,  # Linearly increase to 100% base LR
+        total_iters=warmup_epochs
+    )
+
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, main_scheduler],
+        milestones=[warmup_epochs]
+    )
 
     return optimizer, scheduler
 
