@@ -111,7 +111,7 @@ def main(
     for seed in seeds:
         for norm in norms:
             set_random_seeds(seed)
-            print(f"Running {norm} with seed {seed}, optimizer {optim_name}, batch size {batch_size}, lam {lam}, and dropout {dropout}.")
+            print(f"Running {norm} with seed {seed}, optimizer {optim_name}, batch size {batch_size}, lam {lam}, clip {clip}, and dropout {dropout}.")
             norm_layer = get_norm_layer(norm)
             if norm in ["agn", "gn", "agn2"]:
                 norm_layer = norm_layer[:n_layers]
