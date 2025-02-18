@@ -62,7 +62,7 @@ def main(
     root: str = "./data",
     n_layers: int = 4,
     epochs: int = 300,
-    optim_name: str = "adamw",
+    optim_name: str = "sgd",
     batch_size: int = 64,
     dropout: float = 0.5,
     lam: float = 1e-2,  # set to zero for normal cross entropy

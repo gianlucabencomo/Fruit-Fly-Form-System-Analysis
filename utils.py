@@ -71,7 +71,7 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup
 
 
 
-def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [4, 8, 16, 32]):
+def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [8, 16, 32, 64]):
     # import inside function to avoid circular import error
     from normalization import (
         BatchNorm2d,
