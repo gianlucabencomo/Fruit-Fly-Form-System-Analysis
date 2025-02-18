@@ -16,6 +16,9 @@ from models import CNN
 from normalization import *
 from losses import AdaptiveGroupNormLoss
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+
 WIDTHS = {
     1: [32],
     2: [32, 64],
