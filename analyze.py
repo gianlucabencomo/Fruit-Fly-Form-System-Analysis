@@ -13,10 +13,13 @@ from utils import *
 
 from models import CNN
 from normalization import AdaptiveGroupNorm
-from losses import AdaptiveGroupNormLoss
+from losses import AdaptiveGroupNormLoss, AdaptiveGroupNormReconstructionLoss
 
 import numpy as np
 import matplotlib.pyplot as plt
+
+import warnings
+warnings.filterwarnings("ignore")
 
 WIDTHS = {
     1: [32],
@@ -80,6 +83,7 @@ def main(
     alpha: float = 1e-3,
     lam: float = 1e-1,  # set to zero for normal cross entropy
     epochs: int = 10,
+    use_reconstruct: bool = False
 ):
     device = get_device()
     set_random_seeds(seed)
@@ -119,17 +123,20 @@ def main(
     set_random_seeds(seed)
     norm_layers = [
             # Compression factor: 8
-            partial(AdaptiveGroupNorm, 4),
-            partial(AdaptiveGroupNorm, 8),
             partial(AdaptiveGroupNorm, 16),
-            partial(AdaptiveGroupNorm, 32),
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 16),
+            partial(AdaptiveGroupNorm, 16),
     ]
     norm_layers = norm_layers[:n_layers]
     model = CNN(
         num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layers
     ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=alpha)
-    criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
+    if use_reconstruct:
+        criterion = AdaptiveGroupNormReconstructionLoss(model=model, lam=lam)
+    else:
+        criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
 
     train_loss, Qs, Vs = train(
         train_loader, model, criterion, optimizer, epochs, device

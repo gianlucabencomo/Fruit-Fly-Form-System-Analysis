@@ -122,7 +122,6 @@ def main(
             epochs=epochs,
             use_groups=use_groups,
         )
-        # Customize your Trainer as needed for multi-GPU training.
         trainer = L.Trainer(
             max_epochs=epochs,
             accelerator="gpu",

@@ -193,6 +193,10 @@ class AdaptiveGroupNorm(nn.Module):
         x_2 = x_2.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
         var = torch.clamp(x_2 - mean**2, min=self.eps)
 
+        # ! NEW
+        self.reconstructed = x_1.permute(0, 3, 1, 2)
+        self.original = x
+
         # normalize in original space
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
 

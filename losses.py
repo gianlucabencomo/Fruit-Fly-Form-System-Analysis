@@ -7,7 +7,7 @@ import torch.nn.functional as F
 class AdaptiveGroupNormLoss(nn.Module):
     def __init__(self, 
                  model=None, 
-                 lam: float = 5e-3, 
+                 lam: float = 1e-3, 
                  target_q: float = 2.324, # weighted average of in entropy over 13 Dm cell types
                  target_v: float = 3.309 # weighted average of out entropy over 13 Dm cell types
                  ):
@@ -35,5 +35,33 @@ class AdaptiveGroupNormLoss(nn.Module):
     def forward(self, logits, targets):
         loss = self.ce(logits, targets)
         if self.lam > 0.0 or self.model != None:
+            loss += self.lam * self.regularize()
+        return loss
+
+class AdaptiveGroupNormReconstructionLoss(nn.Module):
+    def __init__(self, 
+                 model=None, 
+                 lam: float = 1e-3, 
+                 ):
+        super().__init__()
+        self.ce = nn.CrossEntropyLoss()
+        self.model = model
+        self.lam = lam
+
+    def regularize(self):
+        total_recon_loss = 0.0
+        count = 0
+        for module in self.model.modules():
+            if isinstance(module, AdaptiveGroupNorm):
+                if hasattr(module, "original") and hasattr(module, "reconstructed"):
+                    recon_loss = F.mse_loss(module.reconstructed, module.original)
+                    total_recon_loss += recon_loss
+                    count += 1
+        avg_recon_loss = total_recon_loss / count if count > 0 else 0.0
+        return avg_recon_loss
+
+    def forward(self, logits, targets):
+        loss = self.ce(logits, targets)
+        if self.lam > 0.0 and self.model is not None:
             loss += self.lam * self.regularize()
         return loss
