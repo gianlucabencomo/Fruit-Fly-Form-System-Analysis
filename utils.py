@@ -22,7 +22,7 @@ def set_random_seeds(seed: int = 0):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup_epochs: int = 5):
+def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup_epochs: int = 5, dataset: str = "cifar100"):
     """Optimizers and schedulers for CIFAR-100"""
     if optimizer not in ["sgd", "adamw"]:
         raise NotImplementedError(f"Optimizer '{optimizer}' is not implemented. Choose 'sgd' or 'adamw'.")
@@ -31,13 +31,14 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup
     if optimizer == "sgd":
         optimizer = torch.optim.SGD(
             model.parameters(),
-            lr=0.01,            
+            lr=0.01 if dataset == "cifar100" else 0.1,            
             momentum=0.9,      
             weight_decay=1e-4,
         )
+        milestones = [25, 55, 85] if "imagenet" else [int(0.5 * epochs), int(0.75 * epochs)]
         main_scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
-            milestones=[int(0.5 * epochs), int(0.75 * epochs)],
+            milestones=milestones,
             gamma=0.1              
         )
 
@@ -108,24 +109,19 @@ def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [8, 16, 3
     return norm_layer
 
 
-def replace_batch_norm_layers(model, custom_norm_fn, compression_factor: int = 2):
+def replace_batch_norm_layers(model, norm: str, compression_factor: int = None, n_groups: int = 32):
     # import inside function to avoid circular import error
-    from normalization import (
-        BatchNorm2d,
-        LayerNorm2d,
-        GroupNorm,
-        InstanceNorm2d,
-        AdaptiveGroupNorm,
-        LocalContextNorm,
-    )
-
+    from normalization import GroupNorm, AdaptiveGroupNorm, BatchNorm2d, LayerNorm2d, InstanceNorm2d
     for name, module in model.named_children():
         if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.SyncBatchNorm):
             num_channels = module.num_features
-            if custom_norm_fn in [GroupNorm, AdaptiveGroupNorm]:
-                n_groups = num_channels // compression_factor
-                setattr(model, name, custom_norm_fn(n_groups, num_channels))
+            if norm in ["gn", "agn"]:
+                if compression_factor is not None:
+                    n_groups = num_channels // compression_factor
+                f = AdaptiveGroupNorm if norm == "agn" else GroupNorm
+                setattr(model, name, f(n_groups, num_channels))
             else:
-                setattr(model, name, custom_norm_fn(num_channels))
+                f = LayerNorm2d if norm == "ln" else InstanceNorm2d
+                setattr(model, name, f(num_channels))
         else:
-            replace_batch_norm_layers(module, custom_norm_fn)
+            replace_batch_norm_layers(module, norm, compression_factor, n_groups)
