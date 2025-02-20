@@ -13,7 +13,6 @@ from torchvision import datasets
 
 from transforms import image_transforms
 from utils import *
-from losses import AdaptiveGroupNormLoss
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -56,11 +55,10 @@ def main(
     seeds: int = 1,
     root: str = "./data",
     dataset: str = "cifar100",
-    batch_size: int = 256,
+    batch_size: int = 64,
     optim_name: str = "sgd",
-    lam: float = 1e-2,  # set to zero for normal cross entropy
     compression_factor: int = 16,
-    epochs: int = 100,
+    epochs: int = 300,
     use_groups: bool = False # use 32 groups at every layer if true
 ):
     device = get_device()
@@ -112,7 +110,7 @@ def main(
         prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
-    norms = ["ln", "gn", "agn", "in", "bn"]
+    norms = ["agn", "ln", "gn", "in", "bn"]
 
     train_results = {norm: [] for norm in norms}
     test_results = {norm: [] for norm in norms}
@@ -121,16 +119,17 @@ def main(
     for seed in seeds:
         for norm in norms:
             set_random_seeds(seed)
-            print(f"Running {norm} with seed {seed}, optimizer {optim_name}, batch size {batch_size}, lam {lam}.")
+            print(f"Running {norm} with seed {seed}, optimizer {optim_name}, batch size {batch_size}")
             model = models.resnet18(weights=None).to(device)
+            if dataset == "cifar100":
+                model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+                model.maxpool = nn.Identity()
+                model.fc = nn.Linear(512, 100)
             if norm != "bn":
                 replace_batch_norm_layers(model, norm, compression_factor=compression_factor)
             model = model.to(device)
             optimizer, scheduler = get_optimizer_and_scheduler(model, optim_name, epochs, dataset=dataset)
-            if norm == "agn":
-                criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
-            else:
-                criterion = nn.CrossEntropyLoss()
+            criterion = nn.CrossEntropyLoss()
             
             train_res, test_res = train(
                 train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device
@@ -144,7 +143,7 @@ def main(
             )
 
     os.makedirs("results", exist_ok=True)
-    lam_str = f"{lam:.0e}" if lam != 0.0 else "no_lam"
+    lam_str = "no_lam"
     np.savez(
         os.path.join("results", f"resnet_{batch_size}_{optim_name}_{epochs}_{lam_str}.npz"),
         train_results=train_results,

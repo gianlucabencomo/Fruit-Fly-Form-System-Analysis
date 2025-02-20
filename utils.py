@@ -28,20 +28,12 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup
         raise NotImplementedError(f"Optimizer '{optimizer}' is not implemented. Choose 'sgd' or 'adamw'.")
     assert epochs > warmup_epochs, "Total epochs must be greater than number of warm-up epochs (5)."
     epochs = epochs - warmup_epochs
-    decay_params, no_decay_params = [], []
-    for name, param in model.named_parameters():
-        if "Q" in name or "V" in name:
-            no_decay_params.append(param)
-        else:
-            decay_params.append(param)
     if optimizer == "sgd":
         optimizer = torch.optim.SGD(
-            [
-                {'params': decay_params, 'weight_decay': 1e-4},
-                {'params': no_decay_params, 'weight_decay': 0.0}  
-            ],
+            model.parameters(),
             lr=0.1,
             momentum=0.9,   
+            weight_decay=1e-4,
         )
         milestones = [25, 55, 85] if dataset == "imagenet" else [int(0.5 * epochs), int(0.75 * epochs)]
         main_scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -52,12 +44,10 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup
 
     elif optimizer == "adamw":
         optimizer = torch.optim.AdamW(
-            [
-                {'params': decay_params, 'weight_decay': 1e-2},
-                {'params': no_decay_params, 'weight_decay': 0.0}  
-            ],
+            model.parameters(),
             lr=1e-3,
             betas=(0.9, 0.999),
+            weight_decay=1e-2
         )
         main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
