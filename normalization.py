@@ -95,7 +95,7 @@ class LocalContextNorm(nn.Module):
 
 
 class AdaptiveGroupNorm(nn.Module):
-    def __init__(self, num_groups, num_features, eps=1e-05):
+    def __init__(self, num_groups, num_features, eps=1e-05, affine=False):
         super().__init__()
         assert (
             num_features % num_groups == 0
@@ -104,10 +104,18 @@ class AdaptiveGroupNorm(nn.Module):
         self.num_features = num_features
         self.eps = eps
         self.k = num_features // num_groups
+        self.affine = affine
 
         self.Q = nn.Parameter(torch.randn(num_features, num_groups))
         self.V = nn.Parameter(torch.randn(num_groups, num_features))
 
+        if self.affine:
+            self.gamma = nn.Parameter(torch.ones(num_features))
+            self.beta = nn.Parameter(torch.zeros(num_features))
+        else:
+            self.gamma = None
+            self.beta = None
+            
         self.u = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
@@ -118,13 +126,27 @@ class AdaptiveGroupNorm(nn.Module):
         u = 1 + (self.k - 1) * torch.sigmoid(self.u)
         M = torch.matmul(A, V) * u
 
-        x_1 = torch.einsum('bchw,jc->bchw', x, M)
+        x_view = x.permute(0, 2, 3, 1).contiguous()
 
-        mean = x_1.mean(dim=(1, 2, 3), keepdim=True)
-        var = x.var(dim=(1, 2, 3), unbiased=False, keepdim=True)
+        # compute first and second moments
+        x_1 = torch.matmul(x_view, M)
+        x_2 = torch.matmul(x_view**2, M)
 
+        # global average in transformed space
+        mean = x_1.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
+        x_2 = x_2.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
+        var = torch.clamp(x_2 - mean**2, min=self.eps)
+
+        # ! NEW
+        self.reconstructed = x_1.permute(0, 3, 1, 2)
+        self.original = x
+        
+        # normalize in original space
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
 
+        # not neccessary but let's see if it does something
+        if self.affine:
+            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
         return x_hat
 
 
