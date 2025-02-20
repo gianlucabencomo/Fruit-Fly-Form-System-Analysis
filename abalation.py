@@ -14,7 +14,7 @@ from transforms import image_transforms
 from utils import *
 from models import CNN
 from normalization import *
-from losses import AdaptiveGroupNormLoss, AdaptiveGroupNormReconstructionLoss
+from losses import AdaptiveGroupNormLoss
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -69,7 +69,6 @@ def main(
     batch_size: int = 64,
     dropout: float = 0.5,
     clip: bool = False,
-    use_reconstruct: bool = False
 ):
     device = get_device()
 
@@ -105,7 +104,7 @@ def main(
         prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
-    lams = [1.0, 1e-1, 1e-2, 1e-3, 1e-4]
+    lams = [1.0, 1e-1, 1e-2, 1e-3]
     norms = [
         [
             # compression factor: 16
@@ -153,10 +152,7 @@ def main(
                 num_layers=n_layers, width=WIDTHS[n_layers], norm_layers=norm_layer, dropout=dropout
             ).to(device)
             optimizer, scheduler = get_optimizer_and_scheduler(model, optim_name, epochs)
-            if use_reconstruct:
-                criterion = AdaptiveGroupNormReconstructionLoss(model=model, lam=lam)
-            else:
-                criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
+            criterion = AdaptiveGroupNormLoss(model=model, lam=lam)
 
             train_res, test_res = train(
                 train_loader, test_loader, model, criterion, optimizer, scheduler, epochs, device, clip
@@ -171,7 +167,7 @@ def main(
 
     os.makedirs("results", exist_ok=True)
     np.savez(
-        os.path.join("results", f"ablation_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}{'_R' if use_reconstruct else ''}.npz"),
+        os.path.join("results", f"ablation_{batch_size}_{str(1) if dropout != 0.0 else str(0)}_{optim_name}_{epochs}_{clip}.npz"),
         train_results=train_results,
         test_results=test_results,
     )

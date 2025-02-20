@@ -28,26 +28,36 @@ def get_optimizer_and_scheduler(model, optimizer: str, epochs: int = 200, warmup
         raise NotImplementedError(f"Optimizer '{optimizer}' is not implemented. Choose 'sgd' or 'adamw'.")
     assert epochs > warmup_epochs, "Total epochs must be greater than number of warm-up epochs (5)."
     epochs = epochs - warmup_epochs
+    decay_params, no_decay_params = [], []
+    for name, param in model.named_parameters():
+        if "Q" in name or "V" in name:
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
     if optimizer == "sgd":
         optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=0.01 if dataset == "cifar100" else 0.1,            
-            momentum=0.9,      
-            weight_decay=1e-4,
+            [
+                {'params': decay_params, 'weight_decay': 1e-4},
+                {'params': no_decay_params, 'weight_decay': 0.0}  
+            ],
+            lr=0.1,
+            momentum=0.9,   
         )
-        milestones = [25, 55, 85] if "imagenet" else [int(0.5 * epochs), int(0.75 * epochs)]
+        milestones = [25, 55, 85] if dataset == "imagenet" else [int(0.5 * epochs), int(0.75 * epochs)]
         main_scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
             milestones=milestones,
-            gamma=0.1              
+            gamma=0.1         
         )
 
     elif optimizer == "adamw":
         optimizer = torch.optim.AdamW(
-            model.parameters(),
+            [
+                {'params': decay_params, 'weight_decay': 1e-2},
+                {'params': no_decay_params, 'weight_decay': 0.0}  
+            ],
             lr=1e-3,
             betas=(0.9, 0.999),
-            weight_decay=1e-2
         )
         main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
@@ -80,7 +90,6 @@ def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [8, 16, 3
         GroupNorm,
         InstanceNorm2d,
         AdaptiveGroupNorm,
-        AdaptiveGroupNorm2,
         LocalContextNorm,
     )
 
@@ -97,8 +106,6 @@ def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [8, 16, 3
         norm_layer = LayerNorm2d
     elif norm == "agn":
         norm_layer = [partial(AdaptiveGroupNorm, G) for G in n_groups]
-    elif norm == "agn2":
-        norm_layer = [partial(AdaptiveGroupNorm2, G) for G in n_groups]
     elif norm == "lcn":
         norm_layer = LocalContextNorm
     elif norm == "identity":
@@ -111,7 +118,7 @@ def get_norm_layer(norm: str, use_local: bool = True, n_groups: list = [8, 16, 3
 
 def replace_batch_norm_layers(model, norm: str, compression_factor: int = None, n_groups: int = 32):
     # import inside function to avoid circular import error
-    from normalization import GroupNorm, AdaptiveGroupNorm, BatchNorm2d, LayerNorm2d, InstanceNorm2d
+    from normalization import GroupNorm, AdaptiveGroupNorm, LayerNorm2d, InstanceNorm2d
     for name, module in model.named_children():
         if isinstance(module, nn.BatchNorm2d) or isinstance(module, nn.SyncBatchNorm):
             num_channels = module.num_features

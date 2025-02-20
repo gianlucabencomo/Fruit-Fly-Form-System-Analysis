@@ -1,67 +1,36 @@
 import torch
 import torch.nn as nn
-from normalization import AdaptiveGroupNorm
 import torch.nn.functional as F
+from normalization import AdaptiveGroupNorm
 
+EPS = 1e-8
+
+def compute_entropy(p, dim=0):
+    return (-torch.sum(p * torch.log(p + EPS), dim=dim)).mean()
 
 class AdaptiveGroupNormLoss(nn.Module):
-    def __init__(self, 
-                 model=None, 
-                 lam: float = 1e-3, 
-                 target_q: float = 2.324, # weighted average of in entropy over 13 Dm cell types
-                 target_v: float = 3.309 # weighted average of out entropy over 13 Dm cell types
-                 ):
+    def __init__(self, model=None, lam: float = 1e-3, target_q: float = 2.324, target_v: float = 3.309):
         super().__init__()
         self.ce = nn.CrossEntropyLoss()
         self.model = model
         self.lam = lam
         self.target_q = target_q
         self.target_v = target_v
-
-    def entropy(self, p, dim=0):
-        H = -torch.sum(p * torch.log(p + 1e-8), dim=dim)
-        return H.mean()
-
+        
+        self.adaptive_modules = []
+        if self.model is not None:
+            self.adaptive_modules = [m for m in self.model.modules() if isinstance(m, AdaptiveGroupNorm)]
+    
     def regularize(self):
-        loss = 0.0
-        for module in self.model.modules():
-            if isinstance(module, AdaptiveGroupNorm):
-                A = F.softmax(module.Q, dim=0)
-                V = F.softmax(module.V, dim=1)
-                loss += (self.entropy(A, dim=0) - self.target_q) ** 2
-                loss += (self.entropy(V, dim=1) - self.target_v) ** 2
+        loss = sum(
+            (compute_entropy(F.softmax(m.Q, dim=0), dim=0) - self.target_q) ** 2 +
+            (compute_entropy(F.softmax(m.V, dim=1), dim=1) - self.target_v) ** 2
+            for m in self.adaptive_modules
+        )
         return loss
-
-    def forward(self, logits, targets):
-        loss = self.ce(logits, targets)
-        if self.lam > 0.0 or self.model != None:
-            loss += self.lam * self.regularize()
-        return loss
-
-class AdaptiveGroupNormReconstructionLoss(nn.Module):
-    def __init__(self, 
-                 model=None, 
-                 lam: float = 1e-3, 
-                 ):
-        super().__init__()
-        self.ce = nn.CrossEntropyLoss()
-        self.model = model
-        self.lam = lam
-
-    def regularize(self):
-        total_recon_loss = 0.0
-        count = 0
-        for module in self.model.modules():
-            if isinstance(module, AdaptiveGroupNorm):
-                if hasattr(module, "original") and hasattr(module, "reconstructed"):
-                    recon_loss = F.mse_loss(module.reconstructed, module.original)
-                    total_recon_loss += recon_loss
-                    count += 1
-        avg_recon_loss = total_recon_loss / count if count > 0 else 0.0
-        return avg_recon_loss
 
     def forward(self, logits, targets):
         loss = self.ce(logits, targets)
         if self.lam > 0.0 and self.model is not None:
-            loss += self.lam * self.regularize()
+            loss = loss + self.lam * self.regularize()
         return loss

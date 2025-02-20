@@ -94,64 +94,6 @@ class LocalContextNorm(nn.Module):
         return x * self.gamma + self.beta
 
 
-class AdaptiveGroupNorm2(nn.Module):
-    """This version normalizes within the latent dimension and the projects back out.
-    
-        This does not work as well as AdaptiveGroupNorm."""
-    def __init__(self, num_groups, num_features, eps=1e-05, affine=True):
-        super().__init__()
-        assert (
-            num_features % num_groups == 0
-        ), "Number of features must be divisible by the number of groups."
-        self.num_groups = num_groups
-        self.num_features = num_features
-        self.eps = eps
-        self.k = num_features // num_groups
-        self.affine = affine
-
-        self.Q = nn.Parameter(torch.empty(num_features, num_groups))
-        nn.init.xavier_uniform_(self.Q)
-
-        self.V = nn.Parameter(torch.empty(num_groups, num_features))
-        nn.init.xavier_uniform_(self.V)
-
-        if self.affine:
-            self.gamma = nn.Parameter(torch.ones(num_features))
-            self.beta = nn.Parameter(torch.zeros(num_features))
-        else:
-            self.gamma = None
-            self.beta = None
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-
-        # projection matricies
-        A = F.softmax(self.Q, dim=1)
-        V = F.softmax(self.V, dim=0)
-
-        x_view = x.permute(0, 2, 3, 1).contiguous()
-
-        # compute first and second moments
-        x_1 = torch.matmul(x_view, A)
-        x_2 = torch.matmul(x_view**2, A)
-
-        # global average in group space
-        mean = x_1.mean(dim=(1, 2), keepdim=True)
-        x_2 = x_2.mean(dim=(1, 2), keepdim=True)
-        var = torch.clamp(x_2 - mean**2, min=self.eps)
-
-        # normalize in group space
-        x_hat = (x_1 - mean) / torch.sqrt(var + self.eps)
-
-        # project back into the original space
-        x_hat = torch.matmul(x_hat, V)
-        x_hat = x_hat.permute(0, 3, 1, 2)
-
-        if self.affine:
-            x_hat = self.gamma.view(1, -1, 1, 1) * x_hat + self.beta.view(1, -1, 1, 1)
-        return x_hat
-
-
 class AdaptiveGroupNorm(nn.Module):
     def __init__(self, num_groups, num_features, eps=1e-05, affine=False):
         super().__init__()
@@ -192,11 +134,7 @@ class AdaptiveGroupNorm(nn.Module):
         mean = x_1.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
         x_2 = x_2.mean(dim=(1, 2), keepdim=True).permute(0, 3, 1, 2).contiguous()
         var = torch.clamp(x_2 - mean**2, min=self.eps)
-
-        # ! NEW
-        self.reconstructed = x_1.permute(0, 3, 1, 2)
-        self.original = x
-
+        
         # normalize in original space
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
 

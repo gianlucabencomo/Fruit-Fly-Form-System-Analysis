@@ -102,6 +102,7 @@ def load_and_visualize_results(
     plt.show()
 
 def main(path: str = "results/cifar100_64_0_adamw_200.npz", save: bool = False):
+    print(path)
     load_and_visualize_results(file_path=path, save=save)
 
 if __name__ == "__main__":

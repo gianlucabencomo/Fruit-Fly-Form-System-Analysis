@@ -67,7 +67,7 @@ def main(
     epochs: int = 300,
     optim_name: str = "sgd",
     batch_size: int = 64,
-    dropout: float = 0.5,
+    dropout: float = 0.2,
     lam: float = 1e-2,  # set to zero for normal cross entropy
     clip: bool = False
 ):
@@ -105,7 +105,8 @@ def main(
         prefetch_factor=2 if torch.cuda.is_available() else None,
     )
 
-    norms = ["agn", "identity", "bn", "ln", "gn", "in"]
+    #norms = ["agn", "identity", "bn", "ln", "gn", "in"]
+    norms = ["agn"]
 
     train_results = {norm: [] for norm in norms}
     test_results = {norm: [] for norm in norms}
